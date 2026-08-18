@@ -136,5 +136,9 @@ campuslearn/
 ```
 
 ---
-###contibution 
-sinchana
+
+## 👥 Contributors & Feature Additions
+
+- **Nayana G. Naik**: **Placement Preparation** — Aptitude practice, mock interview , resume analyzer, company opportunity tracking, and placement analytics dashboards.
+- **Sinchana**: Attendance shortage alert notification system.
+
