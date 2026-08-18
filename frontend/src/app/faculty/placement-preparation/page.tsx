@@ -101,9 +101,9 @@ export default function FacultyPlacementPrepPage() {
                   <h3 className="font-black text-zinc-900 dark:text-white mb-5 flex items-center gap-2"><Target size={18} className="text-blue-500" /> Aptitude & Coding Assessments</h3>
                   <div className="space-y-4">
                     {[
-                      { title: 'Quantitative Aptitude Test 1', duration: '60 mins', qs: 40, tags: ['Math', 'Logic'] },
-                      { title: 'Data Structures & Algorithms', duration: '90 mins', qs: 3, tags: ['Coding', 'Hard'] },
-                      { title: 'Verbal Ability Mock', duration: '30 mins', qs: 25, tags: ['English'] }
+                      { title: 'Quantitative Aptitude Test 1', duration: '60 mins', qs: 40, tags: ['Math', 'Logic'], link: 'https://www.indiabix.com/online-test/aptitude-test/' },
+                      { title: 'Data Structures & Algorithms', duration: '90 mins', qs: 3, tags: ['Coding', 'Hard'], link: 'https://www.geeksforgeeks.org/explore?page=1&category[]=Data%20Structures' },
+                      { title: 'Verbal Ability Mock', duration: '30 mins', qs: 25, tags: ['English'], link: 'https://www.indiabix.com/online-test/verbal-ability-test/' }
                     ].map((test, i) => (
                       <div key={i} className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-orange-500/50 transition-colors">
                         <div>
@@ -116,7 +116,7 @@ export default function FacultyPlacementPrepPage() {
                             {test.tags.map(t => <span key={t} className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500 rounded-md">{t}</span>)}
                           </div>
                         </div>
-                        <button className="flex items-center justify-center w-10 h-10 bg-orange-50 dark:bg-orange-500/10 text-orange-500 rounded-full hover:bg-orange-500 hover:text-white transition-colors">
+                        <button onClick={() => window.open(test.link, '_blank')} className="flex items-center justify-center w-10 h-10 bg-orange-50 dark:bg-orange-500/10 text-orange-500 rounded-full hover:bg-orange-500 hover:text-white transition-colors cursor-pointer">
                           <Play size={16} className="ml-1" />
                         </button>
                       </div>
