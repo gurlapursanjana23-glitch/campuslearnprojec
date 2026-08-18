@@ -45,6 +45,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
  { label: 'Dashboard', href: '/faculty/dashboard', icon: <LayoutDashboard size={18} /> },
  { label: 'Timetable', href: '/faculty/timetable', icon: <Clock size={18} /> },
  { label: 'Exam Portions', href: '/faculty/exam-preparation', icon: <Layers size={18} /> },
+ { label: 'Placement Prep', href: '/faculty/placement-preparation', icon: <Briefcase size={18} /> },
  { label: 'My Courses', href: '/faculty/courses', icon: <BookOpen size={18} /> },
  { label: 'Assignments', href: '/faculty/assignments', icon: <ClipboardList size={18} /> },
  { label: 'Attendance', href: '/faculty/attendance', icon: <UserCheck size={18} /> },
