@@ -20,7 +20,8 @@ async function getStudentAttendance(studentId, courseId) {
       if (entry.status === 'present') present++;
     }
   }
-  const pct = total > 0 ? Math.round((present / total) * 100) : 100;
+  // Return 0% when no records exist — student hasn't been in any recorded class yet
+  const pct = total > 0 ? Math.round((present / total) * 100) : 0;
   return { total, present, absent: total - present, pct };
 }
 
@@ -120,36 +121,51 @@ exports.getAlerts = asyncHandler(async (req, res) => {
 
 // ── POST /api/attendance-extra/alerts/send ─────────────────────────────────
 exports.sendAlerts = asyncHandler(async (req, res) => {
-  // Can be triggered by admin/cron: send alerts to all at-risk students
+  // Send attendance shortage alerts ONLY to students who are actually below threshold
   const rule = await AttendanceRule.findOne().lean();
   const required = rule?.requiredPercentage || REQUIRED_PCT;
+
+  // Get all students
   const students = await User.find({ role: 'student' }, '_id name').lean();
+
+  // Get courses that have actual attendance records (to avoid false 0% for students not yet enrolled)
   const courses = await Course.find({}, '_id title').lean();
 
   let sent = 0;
-  for (const student of students.slice(0, 100)) {
-    for (const course of courses.slice(0, 5)) {
+  for (const student of students) {
+    for (const course of courses) {
       const { pct, total, present } = await getStudentAttendance(student._id, course._id);
+
+      // Only alert if the student has actual attendance records AND is below threshold
+      // Students with total === 0 have no attendance records for this course — skip them
       if (total > 0 && pct < required) {
         const needed = Math.ceil((required * total - present * 100) / (100 - required));
+        const alertLevel = pct < 70 ? 'CRITICAL' : 'WARNING';
+
+        // Create in-app notification for the at-risk student
         await Notification.create({
           recipient: student._id,
-          title: '⚠️ Attendance Alert',
-          message: `Your ${course.title} attendance is ${pct}%. You need to attend the next ${needed} class${needed !== 1 ? 'es' : ''} to reach the required ${required}%.`,
+          title: `⚠️ Attendance ${alertLevel}: ${course.title}`,
+          message: `Your attendance in ${course.title} is ${pct}% — below the required ${required}%. You need to attend ${needed} more class${needed !== 1 ? 'es' : ''} to avoid shortage.`,
           type: 'attendance',
           isRead: false,
         });
+
+        // Also save an AttendanceAlert record
         await AttendanceAlert.create({
           student: student._id,
-          course: course._id,
-          percentage: pct,
-          required,
-          alertType: pct < 70 ? 'CRITICAL' : 'WARNING',
+          subject: course.title,
+          currentPercentage: pct,
+          requiredPercentage: required,
+          riskLevel: pct < 70 ? 'CRITICAL' : pct < required ? 'SHORTAGE RISK' : 'WARNING',
+          message: `Attend ${needed} more class${needed !== 1 ? 'es' : ''} to reach ${required}%`,
+          isRead: false,
         });
+
         sent++;
       }
     }
   }
 
-  successResponse(res, 200, `Sent ${sent} attendance alerts`);
+  successResponse(res, 200, `Sent ${sent} attendance alerts to at-risk students only`);
 });
