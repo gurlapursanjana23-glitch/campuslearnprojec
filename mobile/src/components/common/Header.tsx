@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  Modal,
+  TextInput,
+  Alert,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, DEMO_USERS } from '../../store/authStore';
 import { darkTheme, lightTheme, spacing, borderRadius } from '../../theme/theme';
+import { Button } from './Button';
 import { Role } from '../../types';
 
 interface HeaderProps {
@@ -20,9 +30,21 @@ export const Header: React.FC<HeaderProps> = ({
   onBack,
   rightAction,
 }) => {
-  const { user, themeMode, toggleTheme, loginAsRole, unreadNotifications, markNotificationsAsRead } = useAuthStore();
+  const {
+    user,
+    themeMode,
+    toggleTheme,
+    loginAsRole,
+    unreadNotifications,
+    markNotificationsAsRead,
+    serverUrl,
+    updateServerUrl,
+  } = useAuthStore();
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
+
   const [roleModalVisible, setRoleModalVisible] = useState(false);
+  const [serverModalVisible, setServerModalVisible] = useState(false);
+  const [inputUrl, setInputUrl] = useState(serverUrl);
 
   const getRoleBadgeColor = (role?: Role) => {
     switch (role) {
@@ -32,6 +54,13 @@ export const Header: React.FC<HeaderProps> = ({
       case 'admin': return '#EF4444';
       default: return '#64748B';
     }
+  };
+
+  const handleSaveServerUrl = async () => {
+    if (!inputUrl.trim()) return;
+    await updateServerUrl(inputUrl);
+    setServerModalVisible(false);
+    Alert.alert('Server URL Updated! 🔗', `Mobile app will now communicate directly with database at: ${inputUrl}`);
   };
 
   return (
@@ -62,6 +91,19 @@ export const Header: React.FC<HeaderProps> = ({
 
       <View style={styles.rightSection}>
         {rightAction}
+
+        {/* Database / Server Connection Indicator */}
+        <TouchableOpacity
+          style={[styles.dbStatusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          onPress={() => {
+            setInputUrl(serverUrl);
+            setServerModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.dbStatusDot} />
+          <Text style={[styles.dbStatusText, { color: theme.textSecondary }]}>DB Sync</Text>
+        </TouchableOpacity>
 
         {/* Quick Role Switcher Button */}
         {user && (
@@ -159,6 +201,72 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Server & Database Connection Modal */}
+      <Modal
+        visible={serverModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setServerModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setServerModalVisible(false)}
+        >
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Ionicons name="server" size={20} color="#10B981" />
+              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Database Connection</Text>
+            </View>
+            <Text style={[styles.modalDesc, { color: theme.textSecondary }]}>
+              Configured Express & MongoDB API endpoint for live synchronization across Web and Mobile:
+            </Text>
+
+            <View style={{ marginBottom: spacing.md }}>
+              <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>Backend Server URL</Text>
+              <TextInput
+                style={[styles.serverInput, { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.textPrimary }]}
+                value={inputUrl}
+                onChangeText={setInputUrl}
+                placeholder="http://10.185.107.20:5001/api"
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.quickUrlsRow}>
+              <TouchableOpacity
+                style={[styles.quickUrlPill, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => setInputUrl('http://localhost:5001/api')}
+              >
+                <Text style={[styles.quickUrlText, { color: theme.textSecondary }]}>Localhost (Web)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.quickUrlPill, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => setInputUrl('http://10.185.107.20:5001/api')}
+              >
+                <Text style={[styles.quickUrlText, { color: theme.textSecondary }]}>LAN IP (Phone)</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.md }}>
+              <Button
+                title="Cancel"
+                variant="secondary"
+                size="small"
+                onPress={() => setServerModalVisible(false)}
+              />
+              <Button
+                title="Save & Connect"
+                variant="primary"
+                size="small"
+                onPress={handleSaveServerUrl}
+              />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -192,6 +300,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  dbStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    gap: 5,
+  },
+  dbStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  dbStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   iconButton: {
     width: 38,
@@ -245,7 +372,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 440,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
     borderWidth: 1,
@@ -262,6 +389,34 @@ const styles = StyleSheet.create({
   modalDesc: {
     fontSize: 13,
     marginBottom: spacing.md,
+    lineHeight: 18,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  serverInput: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    height: 42,
+    fontSize: 13,
+  },
+  quickUrlsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: spacing.xs,
+  },
+  quickUrlPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+  },
+  quickUrlText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   roleOption: {
     flexDirection: 'row',

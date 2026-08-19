@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Role, ThemeMode } from '../types';
+import { authAPI, setServerUrl, initApiConfig, getServerUrl } from '../services/api';
 
 export const DEMO_USERS: Record<Role, User> = {
   student: {
@@ -63,6 +64,8 @@ interface AuthState {
   themeMode: ThemeMode;
   isLoading: boolean;
   unreadNotifications: number;
+  serverUrl: string;
+  isBackendConnected: boolean;
   
   // Actions
   loginAsRole: (role: Role) => Promise<void>;
@@ -72,28 +75,46 @@ interface AuthState {
   setThemeMode: (mode: ThemeMode) => void;
   updateUserProfile: (updates: Partial<User>) => void;
   initSession: () => Promise<void>;
+  updateServerUrl: (url: string) => Promise<void>;
   markNotificationsAsRead: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: DEMO_USERS.student, // Default active demo user for instant accessibility
+  user: DEMO_USERS.student,
   token: 'mock_jwt_token_campuslearn',
   isAuthenticated: true,
   themeMode: 'dark',
   isLoading: false,
   unreadNotifications: 3,
+  serverUrl: getServerUrl(),
+  isBackendConnected: true,
 
   initSession: async () => {
     try {
+      const activeUrl = await initApiConfig();
+      set({ serverUrl: activeUrl });
+
       const savedUser = await AsyncStorage.getItem('@campuslearn_user');
+      const savedToken = await AsyncStorage.getItem('@campuslearn_token');
       const savedTheme = await AsyncStorage.getItem('@campuslearn_theme');
       
       if (savedTheme) {
         set({ themeMode: savedTheme as ThemeMode });
       }
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        set({ user: parsed, isAuthenticated: true, token: 'mock_jwt_token' });
+      if (savedUser && savedToken) {
+        set({ user: JSON.parse(savedUser), token: savedToken, isAuthenticated: true });
+        
+        // Attempt live profile sync from MongoDB
+        try {
+          const { data } = await authAPI.getMe();
+          if (data?.data) {
+            set({ user: data.data, isBackendConnected: true });
+            await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(data.data));
+          }
+        } catch (err) {
+          // Backend offline or local fallback
+          console.log('Using cached session:', err);
+        }
       }
     } catch (e) {
       console.log('Error initializing session:', e);
@@ -103,9 +124,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loginAsRole: async (role: Role) => {
     set({ isLoading: true });
     const selectedUser = DEMO_USERS[role];
+
+    // Attempt live backend login with default institutional credentials
+    try {
+      const res = await authAPI.login(selectedUser.email, 'CampusLearn@123');
+      if (res.data?.data) {
+        const { user, accessToken, refreshToken } = res.data.data;
+        await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(user));
+        await AsyncStorage.setItem('@campuslearn_token', accessToken);
+        if (refreshToken) {
+          await AsyncStorage.setItem('@campuslearn_refresh_token', refreshToken);
+        }
+        set({
+          user,
+          token: accessToken,
+          isAuthenticated: true,
+          isLoading: false,
+          isBackendConnected: true,
+        });
+        return;
+      }
+    } catch (e) {
+      console.log('Live backend login fallback to demo:', e);
+    }
+
+    // Fallback to demo profile
     try {
       await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(selectedUser));
+      await AsyncStorage.setItem('@campuslearn_token', `mock_jwt_${role}`);
     } catch (e) {}
+
     setTimeout(() => {
       set({
         user: selectedUser,
@@ -113,12 +161,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
       });
-    }, 300);
+    }, 200);
   },
 
   loginWithEmail: async (email: string, pass: string) => {
     set({ isLoading: true });
-    // Determine matching role or default
+    try {
+      const res = await authAPI.login(email, pass);
+      if (res.data?.data) {
+        const { user, accessToken, refreshToken } = res.data.data;
+        await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(user));
+        await AsyncStorage.setItem('@campuslearn_token', accessToken);
+        if (refreshToken) {
+          await AsyncStorage.setItem('@campuslearn_refresh_token', refreshToken);
+        }
+        set({
+          user,
+          token: accessToken,
+          isAuthenticated: true,
+          isLoading: false,
+          isBackendConnected: true,
+        });
+        return true;
+      }
+    } catch (e) {
+      console.log('Live auth failed, attempting role fallback:', e);
+    }
+
+    // Role matching fallback
     let matchedRole: Role = 'student';
     if (email.includes('faculty') || email.includes('prof')) matchedRole = 'faculty';
     else if (email.includes('hod')) matchedRole = 'hod';
@@ -127,30 +197,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const selectedUser = DEMO_USERS[matchedRole];
     try {
       await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(selectedUser));
+      await AsyncStorage.setItem('@campuslearn_token', `mock_jwt_${matchedRole}`);
     } catch (e) {}
 
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        set({
-          user: selectedUser,
-          token: `mock_jwt_${matchedRole}`,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-        resolve(true);
-      }, 400);
+    set({
+      user: selectedUser,
+      token: `mock_jwt_${matchedRole}`,
+      isAuthenticated: true,
+      isLoading: false,
     });
+    return true;
   },
 
   logout: async () => {
     try {
+      await authAPI.logout();
+    } catch (e) {}
+    try {
       await AsyncStorage.removeItem('@campuslearn_user');
+      await AsyncStorage.removeItem('@campuslearn_token');
+      await AsyncStorage.removeItem('@campuslearn_refresh_token');
     } catch (e) {}
     set({
       user: null,
       token: null,
       isAuthenticated: false,
     });
+  },
+
+  updateServerUrl: async (newUrl: string) => {
+    await setServerUrl(newUrl);
+    set({ serverUrl: newUrl });
   },
 
   toggleTheme: () => {

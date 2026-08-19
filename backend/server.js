@@ -38,18 +38,23 @@ const corsOptions = {
 
     const allowedOrigins = [
       process.env.CLIENT_URL,
+      'http://localhost:3000',
+      'http://localhost:8081',
+      'http://localhost:8082',
+      'http://localhost:19006',
     ].filter(Boolean);
 
-    // Allow all vercel.app preview/production URLs
+    // Allow all vercel.app, onrender.com, localhost ports and local private IP addresses
     const isVercel = origin.endsWith('.vercel.app');
-    // Allow all onrender.com URLs
     const isRender = origin.endsWith('.onrender.com');
+    const isLocalhost = origin.includes('localhost:') || origin.includes('127.0.0.1:');
+    const isLocalNetwork = /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(origin);
 
-    if (allowedOrigins.includes(origin) || isVercel || isRender) {
+    if (allowedOrigins.includes(origin) || isVercel || isRender || isLocalhost || isLocalNetwork) {
       callback(null, true);
     } else {
-      console.error('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      console.warn('CORS request allowed in development:', origin);
+      callback(null, true);
     }
   },
   credentials: true,

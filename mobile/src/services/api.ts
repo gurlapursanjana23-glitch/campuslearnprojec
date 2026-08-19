@@ -1,5 +1,6 @@
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Course,
   Assignment,
@@ -10,27 +11,168 @@ import {
   TimetableSlot,
 } from '../types';
 
-// Dynamic API URL resolution for Web vs Android Emulator vs Physical Device
-const getBaseUrl = () => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5001/api';
-  } else if (Platform.OS === 'ios') {
-    return 'http://localhost:5001/api';
-  }
-  return 'http://localhost:5001/api';
-};
+// Default base URL determination
+// Physical phone uses the PC's Wi-Fi IP address (10.185.107.20), Web uses localhost
+export const DEFAULT_API_URL = Platform.select({
+  web: 'http://localhost:5001/api',
+  android: 'http://10.185.107.20:5001/api',
+  ios: 'http://10.185.107.20:5001/api',
+  default: 'http://10.185.107.20:5001/api',
+});
 
-export const apiClient = axios.create({
-  baseURL: getBaseUrl(),
-  timeout: 6000,
+let currentBaseUrl = DEFAULT_API_URL;
+
+export const api: AxiosInstance = axios.create({
+  baseURL: currentBaseUrl,
+  timeout: 8000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+// Load saved custom server URL from storage
+export const initApiConfig = async (): Promise<string> => {
+  try {
+    const savedUrl = await AsyncStorage.getItem('@campuslearn_api_url');
+    if (savedUrl) {
+      currentBaseUrl = savedUrl;
+      api.defaults.baseURL = savedUrl;
+    }
+  } catch (e) {}
+  return currentBaseUrl;
+};
+
+export const setServerUrl = async (newUrl: string): Promise<void> => {
+  let formatted = newUrl.trim();
+  if (formatted.endsWith('/')) formatted = formatted.slice(0, -1);
+  if (!formatted.endsWith('/api')) formatted = `${formatted}/api`;
+
+  currentBaseUrl = formatted;
+  api.defaults.baseURL = formatted;
+  try {
+    await AsyncStorage.setItem('@campuslearn_api_url', formatted);
+  } catch (e) {}
+};
+
+export const getServerUrl = (): string => currentBaseUrl;
+
+// Request Interceptor: Attach JWT token from AsyncStorage
+api.interceptors.request.use(
+  async (config) => {
+    try {
+      const token = await AsyncStorage.getItem('@campuslearn_token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (e) {}
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response Interceptor: Auto token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const refreshToken = await AsyncStorage.getItem('@campuslearn_refresh_token');
+        if (refreshToken) {
+          const { data } = await axios.post(`${currentBaseUrl}/auth/refresh`, { refreshToken });
+          const newToken = data.data?.accessToken;
+          if (newToken) {
+            await AsyncStorage.setItem('@campuslearn_token', newToken);
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return api(originalRequest);
+          }
+        }
+      } catch (err) {
+        await AsyncStorage.removeItem('@campuslearn_token');
+        await AsyncStorage.removeItem('@campuslearn_user');
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE BACKEND API SERVICE DEFINITIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const authAPI = {
+  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  register: (data: Record<string, unknown>) => api.post('/auth/register', data),
+  getMe: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
+  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+};
+
+export const courseAPI = {
+  getAll: (params?: Record<string, unknown>) => api.get('/courses', { params }),
+  getOne: (id: string) => api.get(`/courses/${id}`),
+  create: (data: FormData | Record<string, unknown>) => api.post('/courses', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/courses/${id}`, data),
+  delete: (id: string) => api.delete(`/courses/${id}`),
+  enroll: (id: string) => api.post(`/courses/${id}/enroll`),
+  approve: (id: string) => api.patch(`/courses/${id}/approve`),
+  getStudents: (id: string) => api.get(`/courses/${id}/students`),
+};
+
+export const assignmentAPI = {
+  getAll: (params?: Record<string, unknown>) => api.get('/assignments', { params }),
+  create: (data: Record<string, unknown>) => api.post('/assignments', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/assignments/${id}`, data),
+  delete: (id: string) => api.delete(`/assignments/${id}`),
+  submit: (id: string, data: Record<string, unknown>) => api.post(`/assignments/${id}/submit`, data),
+  getSubmissions: (id: string) => api.get(`/assignments/${id}/submissions`),
+  grade: (submissionId: string, data: Record<string, unknown>) => api.put(`/assignments/submissions/${submissionId}/grade`, data),
+};
+
+export const attendanceAPI = {
+  mark: (data: Record<string, unknown>) => api.post('/attendance', data),
+  getAll: (params?: Record<string, unknown>) => api.get('/attendance', { params }),
+  getMine: (params?: Record<string, unknown>) => api.get('/attendance/my-attendance', { params }),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/attendance/${id}`, data),
+};
+
+export const announcementAPI = {
+  getAll: (params?: Record<string, unknown>) => api.get('/announcements', { params }),
+  create: (data: Record<string, unknown>) => api.post('/announcements', data),
+  delete: (id: string) => api.delete(`/announcements/${id}`),
+};
+
+export const placementAPI = {
+  getDashboard: () => api.get('/placement/dashboard'),
+  getAptitude: (params?: Record<string, unknown>) => api.get('/placement/aptitude', { params }),
+  submitAptitudeTest: (data: Record<string, unknown>) => api.post('/placement/aptitude/test', data),
+  getCodingQuestions: (params?: Record<string, unknown>) => api.get('/placement/coding', { params }),
+  analyzeResume: (data: Record<string, unknown>) => api.post('/placement/resume/analyze', data),
+  getCompanies: (params?: Record<string, unknown>) => api.get('/placement/companies', { params }),
+};
+
+export const aiAPI = {
+  chat: (message: string, history: unknown[] = [], context?: Record<string, unknown>) =>
+    api.post('/ai/chat', { message, history, context }),
+};
+
+export const adminAPI = {
+  getStats: () => api.get('/admin/stats'),
+  getUsers: (params?: Record<string, unknown>) => api.get('/admin/users', { params }),
+  bulkCreateUsers: (users: unknown[]) => api.post('/admin/users/bulk', users),
+  updateUser: (id: string, data: Record<string, unknown>) => api.put(`/admin/users/${id}`, data),
+};
+
+export const hodAPI = {
+  getStats: () => api.get('/hod/stats'),
+  getFaculty: () => api.get('/hod/faculty'),
+  getStudents: (params?: Record<string, unknown>) => api.get('/hod/students', { params }),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPREHENSIVE HIGH-FIDELITY MOCK DATA REPOSITORY
-// Ensures 100% interactive, offline-resilient demo on Web, Android, and iOS
+// Used for instant rendering and offline-resilience
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const MOCK_COURSES: Course[] = [
@@ -70,15 +212,6 @@ export const MOCK_COURSES: Course[] = [
           { _id: 'l6', title: 'Matrix Chain Multiplication Problem', type: 'reading', duration: '30m', completed: false },
         ],
       },
-      {
-        _id: 'm3',
-        title: 'Module 3: Graph Algorithms & Network Flow',
-        duration: '4h 10m',
-        lessons: [
-          { _id: 'l7', title: 'Dijkstra & Bellman-Ford Shortest Paths', type: 'video', duration: '55m', completed: false },
-          { _id: 'l8', title: 'Minimum Spanning Trees: Kruskal & Prim', type: 'video', duration: '45m', completed: false },
-        ],
-      },
     ],
   },
   {
@@ -96,26 +229,7 @@ export const MOCK_COURSES: Course[] = [
     progress: 70,
     rating: 4.8,
     totalStudents: 118,
-    modules: [
-      {
-        _id: 'm1_db',
-        title: 'Module 1: Advanced SQL & Query Optimization',
-        duration: '4h 15m',
-        lessons: [
-          { _id: 'l1_db', title: 'Complex Joins, CTEs, and Window Functions', type: 'video', duration: '40m', completed: true },
-          { _id: 'l2_db', title: 'Query Execution Plans & B-Tree Indexes', type: 'video', duration: '50m', completed: true },
-        ],
-      },
-      {
-        _id: 'm2_db',
-        title: 'Module 2: Transaction Management & Concurrency Control',
-        duration: '3h 30m',
-        lessons: [
-          { _id: 'l3_db', title: 'Two-Phase Locking & Deadlock Handling', type: 'video', duration: '45m', completed: true },
-          { _id: 'l4_db', title: 'Write-Ahead Logging (WAL) & Recovery', type: 'reading', duration: '25m', completed: false },
-        ],
-      },
-    ],
+    modules: [],
   },
   {
     _id: 'CS303',
@@ -132,17 +246,7 @@ export const MOCK_COURSES: Course[] = [
     progress: 88,
     rating: 4.95,
     totalStudents: 140,
-    modules: [
-      {
-        _id: 'm1_cs',
-        title: 'Module 1: Reactive State & Cross-Platform UI',
-        duration: '3h 00m',
-        lessons: [
-          { _id: 'l1_cs', title: 'React Native for Mobile & Web', type: 'video', duration: '45m', completed: true },
-          { _id: 'l2_cs', title: 'Zustand & Global State Flow', type: 'video', duration: '35m', completed: true },
-        ],
-      },
-    ],
+    modules: [],
   },
   {
     _id: 'CS304',
@@ -296,25 +400,6 @@ export const MOCK_APTITUDE_QUIZ: QuizQuestion[] = [
     correctAnswer: 1,
     explanation: 'Second Normal Form (2NF) enforces that every non-prime attribute is fully functionally dependent on the entire primary key.',
   },
-  {
-    id: 'q4',
-    question: 'In a binary search tree of height h with n nodes, what is the best possible height for optimal balance?',
-    options: ['h = ⌊log₂ n⌋', 'h = n - 1', 'h = √n', 'h = 2n'],
-    correctAnswer: 0,
-    explanation: 'A balanced binary tree has height proportional to floor(log2(n)).',
-  },
-  {
-    id: 'q5',
-    question: 'What does the ACID acronym in database transaction processing stand for?',
-    options: [
-      'Atomicity, Consistency, Isolation, Durability',
-      'Accuracy, Concurrency, Integrity, Distribution',
-      'Availability, Consistency, Isolation, Dependency',
-      'Authentication, Cryptography, Integrity, Decryption',
-    ],
-    correctAnswer: 0,
-    explanation: 'ACID guarantees reliable transactions: Atomicity, Consistency, Isolation, and Durability.',
-  },
 ];
 
 export const MOCK_PLACEMENTS: PlacementOpportunity[] = [
@@ -344,32 +429,6 @@ export const MOCK_PLACEMENTS: PlacementOpportunity[] = [
     eligibility: ['B.Tech all streams', 'Strong DS/Algo proficiency'],
     applied: false,
   },
-  {
-    _id: 'job_03',
-    companyName: 'Amazon Web Services (AWS)',
-    companyLogo: 'https://cdn-icons-png.flaticon.com/512/5968/5968382.png',
-    role: 'Cloud Solutions Intern (Summer 2027)',
-    location: 'Chennai / Remote',
-    type: 'Internship',
-    package: '₹1,10,000 / month Stipend',
-    minCgpa: 7.0,
-    deadline: '05 Sep 2026',
-    eligibility: ['Penultimate year students', 'Linux & Networking basics'],
-    applied: false,
-  },
-  {
-    _id: 'job_04',
-    companyName: 'Goldman Sachs',
-    companyLogo: 'https://cdn-icons-png.flaticon.com/512/3670/3670157.png',
-    role: 'Quantitative Engineering Analyst',
-    location: 'Bengaluru, KA',
-    type: 'Full-Time',
-    package: '₹26 - 32 LPA',
-    minCgpa: 8.5,
-    deadline: '10 Sep 2026',
-    eligibility: ['B.Tech CSE/ECE/Data', 'High Aptitude & Probability skills'],
-    applied: false,
-  },
 ];
 
 export const MOCK_ANNOUNCEMENTS: Announcement[] = [
@@ -395,16 +454,6 @@ export const MOCK_ANNOUNCEMENTS: Announcement[] = [
     date: '17 Aug 2026',
     pinned: true,
   },
-  {
-    _id: 'ann_03',
-    title: '💡 HackCampus 2026: 48-Hour AI & Web3 Hackathon',
-    content: 'Cash prizes worth ₹2,50,000! Form your teams of 3-4 students and register before August 30. Faculty mentors will be assigned to short-listed squads.',
-    priority: 'medium',
-    targetRole: 'all',
-    author: 'ACM Student Chapter',
-    authorRole: 'Faculty Coordinator',
-    date: '15 Aug 2026',
-  },
 ];
 
 export const MOCK_TIMETABLE: TimetableSlot[] = [
@@ -412,11 +461,6 @@ export const MOCK_TIMETABLE: TimetableSlot[] = [
   { id: 't2', day: 'Monday', startTime: '10:15 AM', endTime: '11:15 AM', courseName: 'Database Management Systems', courseCode: 'CS302', room: 'LH-302', faculty: 'Prof. Rajesh Kulkarni', type: 'Lecture' },
   { id: 't3', day: 'Monday', startTime: '11:30 AM', endTime: '01:30 PM', courseName: 'Algorithms Lab (Batch A)', courseCode: 'CS301L', room: 'Computing Lab 3', faculty: 'Dr. Priya Ramanathan', type: 'Lab' },
   { id: 't4', day: 'Monday', startTime: '02:30 PM', endTime: '03:30 PM', courseName: 'Full-Stack Cloud Engineering', courseCode: 'CS303', room: 'LH-304', faculty: 'Er. Ananya Sen', type: 'Lecture' },
-  { id: 't5', day: 'Tuesday', startTime: '09:00 AM', endTime: '10:00 AM', courseName: 'Computer Networks & Security', courseCode: 'CS304', room: 'LH-302', faculty: 'Dr. Priya Ramanathan', type: 'Lecture' },
-  { id: 't6', day: 'Tuesday', startTime: '10:15 AM', endTime: '11:15 AM', courseName: 'Full-Stack Cloud Engineering', courseCode: 'CS303', room: 'LH-304', faculty: 'Er. Ananya Sen', type: 'Lecture' },
-  { id: 't7', day: 'Wednesday', startTime: '09:00 AM', endTime: '11:00 AM', courseName: 'DBMS Query Optimization Lab', courseCode: 'CS302L', room: 'Database Lab 1', faculty: 'Prof. Rajesh Kulkarni', type: 'Lab' },
-  { id: 't8', day: 'Thursday', startTime: '10:15 AM', endTime: '11:15 AM', courseName: 'Design & Analysis of Algorithms', courseCode: 'CS301', room: 'LH-302', faculty: 'Dr. Priya Ramanathan', type: 'Lecture' },
-  { id: 't9', day: 'Friday', startTime: '02:00 PM', endTime: '04:00 PM', courseName: 'Campus Placement Aptitude & Soft Skills', courseCode: 'T&P301', room: 'Auditorium 2', faculty: 'T&P Cell', type: 'Tutorial' },
 ];
 
 export const MOCK_AI_RESPONSES: Record<string, string> = {
