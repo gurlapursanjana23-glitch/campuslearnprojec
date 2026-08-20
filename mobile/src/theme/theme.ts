@@ -9,6 +9,7 @@ export interface ColorPalette {
   textMuted: string;
   border: string;
   primary: string;
+  primaryDark: string;
   primaryLight: string;
   primaryGlow: string;
   secondary: string;
@@ -26,60 +27,64 @@ export interface ColorPalette {
   tabBarBorder: string;
 }
 
+// Exact Web App Dark Mode Theme (Zinc-950 / Zinc-900 / Orange-500)
 export const darkTheme: ColorPalette = {
-  background: '#0B0F19',
-  card: '#131B2E',
-  cardBorder: 'rgba(255, 255, 255, 0.08)',
-  surface: '#1E293B',
-  surfaceHover: '#334155',
-  textPrimary: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
-  border: 'rgba(255, 255, 255, 0.1)',
-  primary: '#6366F1', // Indigo
-  primaryLight: 'rgba(99, 102, 241, 0.15)',
-  primaryGlow: 'rgba(99, 102, 241, 0.35)',
-  secondary: '#8B5CF6', // Purple
-  accent: '#38BDF8', // Cyan
-  success: '#10B981', // Emerald
+  background: '#09090B', // zinc-950
+  card: '#121215',
+  cardBorder: '#27272A', // zinc-800
+  surface: '#18181B', // zinc-900
+  surfaceHover: '#27272A',
+  textPrimary: '#FAFAFA', // neutral-50
+  textSecondary: '#A1A1AA', // zinc-400
+  textMuted: '#71717A', // zinc-500
+  border: '#27272A', // zinc-800
+  primary: '#F97316', // orange-500
+  primaryDark: '#EA580C', // orange-600
+  primaryLight: 'rgba(249, 115, 22, 0.15)',
+  primaryGlow: 'rgba(249, 115, 22, 0.35)',
+  secondary: '#E4E4E7', // zinc-200
+  accent: '#F97316',
+  success: '#10B981', // emerald-500
   successLight: 'rgba(16, 185, 129, 0.15)',
-  warning: '#F59E0B', // Amber
+  warning: '#F59E0B', // amber-500
   warningLight: 'rgba(245, 158, 11, 0.15)',
-  danger: '#EF4444', // Rose
+  danger: '#EF4444', // red-500
   dangerLight: 'rgba(239, 68, 68, 0.15)',
-  info: '#0EA5E9', // Sky
-  overlay: 'rgba(0, 0, 0, 0.75)',
-  inputBg: '#182235',
-  tabBar: '#0F1626',
-  tabBarBorder: 'rgba(255, 255, 255, 0.06)',
+  info: '#38BDF8', // sky-400
+  overlay: 'rgba(9, 9, 11, 0.8)',
+  inputBg: '#18181B',
+  tabBar: '#09090B',
+  tabBarBorder: '#27272A',
 };
 
+// Exact Web App Light Mode Theme
 export const lightTheme: ColorPalette = {
-  background: '#F8FAFC',
+  background: '#FFFFFF',
   card: '#FFFFFF',
-  cardBorder: '#E2E8F0',
-  surface: '#F1F5F9',
-  surfaceHover: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textSecondary: '#475569',
-  textMuted: '#94A3B8',
-  border: '#CBD5E1',
-  primary: '#4F46E5', // Deep Indigo
-  primaryLight: 'rgba(79, 70, 229, 0.1)',
-  primaryGlow: 'rgba(79, 70, 229, 0.25)',
-  secondary: '#7C3AED', // Violet
-  accent: '#0284C7', // Sky Blue
-  success: '#059669', // Emerald
-  successLight: 'rgba(5, 150, 105, 0.1)',
-  warning: '#D97706', // Amber
-  warningLight: 'rgba(217, 119, 6, 0.1)',
-  danger: '#DC2626', // Red
-  dangerLight: 'rgba(220, 38, 38, 0.1)',
+  cardBorder: '#E4E4E7', // zinc-200
+  surface: '#FAFAFA', // neutral-50
+  surfaceHover: '#F4F4F5', // zinc-100
+  textPrimary: '#09090B', // zinc-950
+  textSecondary: '#71717A', // zinc-500
+  textMuted: '#A1A1AA', // zinc-400
+  border: '#E4E4E7', // zinc-200
+  primary: '#F97316', // orange-500
+  primaryDark: '#EA580C', // orange-600
+  primaryLight: 'rgba(249, 115, 22, 0.1)',
+  primaryGlow: 'rgba(249, 115, 22, 0.25)',
+  secondary: '#27272A', // zinc-800
+  accent: '#F97316',
+  success: '#10B981',
+  successLight: 'rgba(16, 185, 129, 0.1)',
+  warning: '#F59E0B',
+  warningLight: 'rgba(245, 158, 11, 0.1)',
+  danger: '#EF4444',
+  dangerLight: 'rgba(239, 68, 68, 0.1)',
   info: '#0284C7',
-  overlay: 'rgba(15, 23, 42, 0.6)',
-  inputBg: '#F8FAFC',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+  inputBg: '#FAFAFA',
   tabBar: '#FFFFFF',
-  tabBarBorder: '#E2E8F0',
+  tabBarBorder: '#E4E4E7',
 };
 
 export const spacing = {
@@ -92,10 +97,10 @@ export const spacing = {
 };
 
 export const borderRadius = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
+  xs: 6,
+  sm: 10,
+  md: 14,
+  lg: 18,
   xl: 24,
   full: 9999,
 };
@@ -103,20 +108,20 @@ export const borderRadius = {
 export const typography = {
   titleLarge: {
     fontSize: 28,
-    fontWeight: '700' as const,
+    fontWeight: '800' as const,
     letterSpacing: -0.5,
   },
   titleMedium: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700' as const,
     letterSpacing: -0.3,
   },
   titleSmall: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600' as const,
   },
   bodyLarge: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '400' as const,
   },
   bodyMedium: {
@@ -129,7 +134,7 @@ export const typography = {
   },
   caption: {
     fontSize: 11,
-    fontWeight: '500' as const,
+    fontWeight: '600' as const,
     textTransform: 'uppercase' as const,
   },
 };

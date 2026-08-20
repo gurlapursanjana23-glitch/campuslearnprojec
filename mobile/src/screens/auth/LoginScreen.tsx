@@ -8,54 +8,60 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore, DEMO_USERS } from '../../store/authStore';
+import { useAuthStore } from '../../store/authStore';
 import { darkTheme, lightTheme, spacing, borderRadius } from '../../theme/theme';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
-import { Role } from '../../types';
 
 interface LoginScreenProps {
-  initialRole?: Role;
   onBackToLanding: () => void;
   onSuccess: () => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
-  initialRole = 'student',
   onBackToLanding,
   onSuccess,
 }) => {
-  const { themeMode, loginAsRole, loginWithEmail, isLoading } = useAuthStore();
+  const { themeMode, loginWithEmail, isLoading } = useAuthStore();
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
 
-  const [selectedRole, setSelectedRole] = useState<Role>(initialRole);
-  const [email, setEmail] = useState(DEMO_USERS[initialRole].email);
-  const [password, setPassword] = useState('CampusLearn@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleRoleQuickSelect = (role: Role) => {
-    setSelectedRole(role);
-    setEmail(DEMO_USERS[role].email);
+  const sampleAccounts = [
+    { role: 'Student', email: 'student@campuslearn.edu', desc: 'Aarav Sharma (B.Tech CSE Sem 6)' },
+    { role: 'Faculty', email: 'faculty@campuslearn.edu', desc: 'Dr. Priya Ramanathan (Assoc. Prof)' },
+    { role: 'HOD', email: 'hod@campuslearn.edu', desc: 'Prof. Rajesh Kulkarni (Dept Head)' },
+    { role: 'Admin', email: 'admin@campuslearn.edu', desc: 'Central University Administrator' },
+  ];
+
+  const handleFillSample = (sampleEmail: string) => {
+    setEmail(sampleEmail);
     setPassword('CampusLearn@123');
     setErrorMsg('');
   };
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMsg('Please enter both email and password.');
+    if (!email.trim()) {
+      setErrorMsg('Please enter your institutional email address.');
+      return;
+    }
+    if (!password.trim()) {
+      setErrorMsg('Please enter your password.');
       return;
     }
     setErrorMsg('');
     try {
-      await loginAsRole(selectedRole);
-      onSuccess();
+      const success = await loginWithEmail(email, password);
+      if (success) {
+        onSuccess();
+      }
     } catch (e: any) {
-      setErrorMsg('Login failed. Please verify your credentials.');
+      setErrorMsg('Invalid institutional credentials. Please try again.');
     }
   };
 
@@ -68,61 +74,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Back Button */}
+        {/* Back to Landing */}
         <TouchableOpacity
           style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
           onPress={onBackToLanding}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
-          <Text style={[styles.backText, { color: theme.textPrimary }]}>Home</Text>
+          <Ionicons name="arrow-back" size={18} color={theme.textPrimary} />
+          <Text style={[styles.backText, { color: theme.textPrimary }]}>Back to Home</Text>
         </TouchableOpacity>
 
         {/* Login Card */}
         <Card style={styles.authCard} variant="elevated">
           {/* Header */}
           <View style={styles.cardHeader}>
-            <View style={[styles.logoBadge, { backgroundColor: theme.primary }]}>
+            <View style={[styles.logoBadge, { backgroundColor: '#F97316' }]}>
               <Ionicons name="school" size={26} color="#FFFFFF" />
             </View>
-            <Text style={[styles.title, { color: theme.textPrimary }]}>Sign in to CampusLearn</Text>
+            <Text style={[styles.title, { color: theme.textPrimary }]}>CampusLearn Login</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              Enter your college credentials or select a 1-tap demo persona below
+              Sign in with your university credentials to access courses, attendance, and placement suites
             </Text>
-          </View>
-
-          {/* Quick Persona Picker */}
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-            1-Tap Demo Persona Autofill:
-          </Text>
-          <View style={styles.rolePickerRow}>
-            {(['student', 'faculty', 'hod', 'admin'] as Role[]).map((r) => {
-              const isSelected = selectedRole === r;
-              return (
-                <TouchableOpacity
-                  key={r}
-                  style={[
-                    styles.rolePill,
-                    {
-                      backgroundColor: isSelected ? theme.primaryLight : theme.surface,
-                      borderColor: isSelected ? theme.primary : theme.border,
-                    },
-                  ]}
-                  onPress={() => handleRoleQuickSelect(r)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.rolePillText,
-                      { color: isSelected ? theme.primary : theme.textSecondary },
-                      isSelected && { fontWeight: '700' },
-                    ]}
-                  >
-                    {r.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
           </View>
 
           {/* Error Message */}
@@ -133,14 +105,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </View>
           ) : null}
 
-          {/* Form Fields */}
+          {/* Email Input */}
           <View style={styles.formGroup}>
-            <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>Email Address</Text>
+            <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>Institutional Email</Text>
             <View style={[styles.inputWrapper, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
               <Ionicons name="mail-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
               <TextInput
                 style={[styles.textInput, { color: theme.textPrimary }]}
-                placeholder="name@campuslearn.edu"
+                placeholder="e.g., student@campuslearn.edu"
                 placeholderTextColor={theme.textMuted}
                 value={email}
                 onChangeText={setEmail}
@@ -150,10 +122,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </View>
           </View>
 
+          {/* Password Input */}
           <View style={styles.formGroup}>
             <View style={styles.labelRow}>
               <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>Password</Text>
-              <Text style={[styles.forgotText, { color: theme.primary }]}>Default: CampusLearn@123</Text>
             </View>
             <View style={[styles.inputWrapper, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
               <Ionicons name="lock-closed-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
@@ -178,23 +150,46 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </View>
           </View>
 
-          {/* Active User Info Preview */}
-          <View style={[styles.activePersonaInfo, { backgroundColor: theme.surface }]}>
-            <Ionicons name="information-circle" size={18} color={theme.primary} />
-            <Text style={[styles.personaText, { color: theme.textSecondary }]}>
-              Logging in as <Text style={{ fontWeight: '700', color: theme.textPrimary }}>{DEMO_USERS[selectedRole].name}</Text> ({selectedRole})
-            </Text>
-          </View>
-
           {/* Submit Button */}
           <Button
-            title={`Sign In as ${selectedRole.toUpperCase()}`}
+            title="Sign In"
             variant="primary"
             size="large"
             loading={isLoading}
             onPress={handleLogin}
-            style={{ marginTop: spacing.md }}
+            style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}
           />
+
+          {/* Institutional Test Accounts Guide */}
+          <View style={[styles.sampleAccountsBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Ionicons name="key-outline" size={16} color="#F97316" />
+              <Text style={[styles.sampleBoxTitle, { color: theme.textPrimary }]}>
+                Sample Institutional Accounts:
+              </Text>
+            </View>
+
+            {sampleAccounts.map((acc) => (
+              <TouchableOpacity
+                key={acc.email}
+                style={[styles.sampleRow, { borderBottomColor: theme.border }]}
+                onPress={() => handleFillSample(acc.email)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sampleRole, { color: theme.textPrimary }]}>
+                    {acc.role}: <Text style={{ color: '#F97316' }}>{acc.email}</Text>
+                  </Text>
+                  <Text style={[styles.sampleDesc, { color: theme.textMuted }]}>{acc.desc}</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={14} color={theme.textMuted} />
+              </TouchableOpacity>
+            ))}
+
+            <Text style={[styles.samplePwdHint, { color: theme.textSecondary }]}>
+              Password for all sample accounts: <Text style={{ fontWeight: '700', color: theme.textPrimary }}>CampusLearn@123</Text>
+            </Text>
+          </View>
         </Card>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -228,7 +223,7 @@ const styles = StyleSheet.create({
   },
   authCard: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 480,
     padding: spacing.xl,
   },
   cardHeader: {
@@ -253,29 +248,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  rolePickerRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: spacing.lg,
-  },
-  rolePill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rolePillText: {
-    fontSize: 11,
-    fontWeight: '600',
   },
   errorBanner: {
     flexDirection: 'row',
@@ -304,10 +276,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 6,
   },
-  forgotText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,15 +295,34 @@ const styles = StyleSheet.create({
   eyeBtn: {
     padding: 4,
   },
-  activePersonaInfo: {
+  sampleAccountsBox: {
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  sampleBoxTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  sampleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.sm,
-    borderRadius: borderRadius.md,
-    marginVertical: spacing.sm,
-    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
   },
-  personaText: {
+  sampleRole: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  sampleDesc: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  samplePwdHint: {
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: 'center',
   },
 });

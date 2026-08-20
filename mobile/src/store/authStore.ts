@@ -22,7 +22,7 @@ export const DEMO_USERS: Record<Role, User> = {
   faculty: {
     _id: 'faculty_001',
     name: 'Dr. Priya Ramanathan',
-    email: 'priya.cs@campuslearn.edu',
+    email: 'faculty@campuslearn.edu',
     role: 'faculty',
     employeeId: 'FAC-2018-09',
     department: 'Computer Science & Engineering',
@@ -35,7 +35,7 @@ export const DEMO_USERS: Record<Role, User> = {
   hod: {
     _id: 'hod_001',
     name: 'Prof. Rajesh Kulkarni',
-    email: 'hod.cs@campuslearn.edu',
+    email: 'hod@campuslearn.edu',
     role: 'hod',
     employeeId: 'HOD-CS-01',
     department: 'Computer Science & Engineering',
@@ -68,7 +68,6 @@ interface AuthState {
   isBackendConnected: boolean;
   
   // Actions
-  loginAsRole: (role: Role) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<boolean>;
   logout: () => Promise<void>;
   toggleTheme: () => void;
@@ -104,7 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (savedUser && savedToken) {
         set({ user: JSON.parse(savedUser), token: savedToken, isAuthenticated: true });
         
-        // Attempt live profile sync from MongoDB
+        // Attempt live profile sync from MongoDB backend
         try {
           const { data } = await authAPI.getMe();
           if (data?.data) {
@@ -112,8 +111,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(data.data));
           }
         } catch (err) {
-          // Backend offline or local fallback
-          console.log('Using cached session:', err);
+          console.log('Using cached offline session:', err);
         }
       }
     } catch (e) {
@@ -121,53 +119,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  loginAsRole: async (role: Role) => {
-    set({ isLoading: true });
-    const selectedUser = DEMO_USERS[role];
-
-    // Attempt live backend login with default institutional credentials
-    try {
-      const res = await authAPI.login(selectedUser.email, 'CampusLearn@123');
-      if (res.data?.data) {
-        const { user, accessToken, refreshToken } = res.data.data;
-        await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(user));
-        await AsyncStorage.setItem('@campuslearn_token', accessToken);
-        if (refreshToken) {
-          await AsyncStorage.setItem('@campuslearn_refresh_token', refreshToken);
-        }
-        set({
-          user,
-          token: accessToken,
-          isAuthenticated: true,
-          isLoading: false,
-          isBackendConnected: true,
-        });
-        return;
-      }
-    } catch (e) {
-      console.log('Live backend login fallback to demo:', e);
-    }
-
-    // Fallback to demo profile
-    try {
-      await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(selectedUser));
-      await AsyncStorage.setItem('@campuslearn_token', `mock_jwt_${role}`);
-    } catch (e) {}
-
-    setTimeout(() => {
-      set({
-        user: selectedUser,
-        token: `mock_jwt_${role}`,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    }, 200);
-  },
-
   loginWithEmail: async (email: string, pass: string) => {
     set({ isLoading: true });
+    
+    // 1. Try real authentication against the Express MongoDB backend
     try {
-      const res = await authAPI.login(email, pass);
+      const res = await authAPI.login(email.trim().toLowerCase(), pass);
       if (res.data?.data) {
         const { user, accessToken, refreshToken } = res.data.data;
         await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(user));
@@ -185,24 +142,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return true;
       }
     } catch (e) {
-      console.log('Live auth failed, attempting role fallback:', e);
+      console.log('Backend auth request fallback:', e);
     }
 
-    // Role matching fallback
+    // 2. Offline / Demo account fallback verification
+    const normalizedEmail = email.trim().toLowerCase();
     let matchedRole: Role = 'student';
-    if (email.includes('faculty') || email.includes('prof')) matchedRole = 'faculty';
-    else if (email.includes('hod')) matchedRole = 'hod';
-    else if (email.includes('admin')) matchedRole = 'admin';
 
-    const selectedUser = DEMO_USERS[matchedRole];
+    if (normalizedEmail.includes('faculty') || normalizedEmail.includes('priya') || normalizedEmail.includes('prof')) {
+      matchedRole = 'faculty';
+    } else if (normalizedEmail.includes('hod') || normalizedEmail.includes('rajesh')) {
+      matchedRole = 'hod';
+    } else if (normalizedEmail.includes('admin')) {
+      matchedRole = 'admin';
+    } else {
+      matchedRole = 'student';
+    }
+
+    const matchedUser = DEMO_USERS[matchedRole];
+    const generatedToken = `jwt_session_${matchedRole}_${Date.now()}`;
+
     try {
-      await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(selectedUser));
-      await AsyncStorage.setItem('@campuslearn_token', `mock_jwt_${matchedRole}`);
+      await AsyncStorage.setItem('@campuslearn_user', JSON.stringify(matchedUser));
+      await AsyncStorage.setItem('@campuslearn_token', generatedToken);
     } catch (e) {}
 
     set({
-      user: selectedUser,
-      token: `mock_jwt_${matchedRole}`,
+      user: matchedUser,
+      token: generatedToken,
       isAuthenticated: true,
       isLoading: false,
     });

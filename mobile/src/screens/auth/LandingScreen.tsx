@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   useWindowDimensions,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
@@ -14,10 +13,9 @@ import { darkTheme, lightTheme, spacing, borderRadius } from '../../theme/theme'
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
-import { Role } from '../../types';
 
 interface LandingScreenProps {
-  onNavigateLogin: (prefilledRole?: Role) => void;
+  onNavigateLogin: () => void;
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin }) => {
@@ -26,12 +24,19 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
   const isLargeScreen = width >= 768;
 
+  const stats = [
+    { label: 'Active Students', value: '4,200+' },
+    { label: 'Course Completion', value: '94.2%' },
+    { label: 'Avg Placement Package', value: '₹14.8 LPA' },
+    { label: 'Partner Recruiters', value: '120+' },
+  ];
+
   const features = [
     {
       icon: 'school-outline',
       title: 'Smart Course Management',
       desc: 'Structured video lectures, PDF notes, and interactive quizzes in one unified hub.',
-      color: '#6366F1',
+      color: '#F97316',
     },
     {
       icon: 'checkmark-done-circle-outline',
@@ -43,7 +48,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
       icon: 'briefcase-outline',
       title: 'Placement & Career Suite',
       desc: 'Aptitude test simulators, AI resume analyzer, mock interviews & corporate drives.',
-      color: '#F59E0B',
+      color: '#8B5CF6',
     },
     {
       icon: 'sparkles-outline',
@@ -53,23 +58,23 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
     },
   ];
 
-  const rolePills: { role: Role; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-    { role: 'student', label: 'Student Hub', desc: 'Assignments, courses, attendance & placement tests', icon: 'person-outline', color: '#38BDF8' },
-    { role: 'faculty', label: 'Faculty Portal', desc: 'Attendance marking, assignment grading & course creation', icon: 'easel-outline', color: '#818CF8' },
-    { role: 'hod', label: 'HOD Analytics', desc: 'Department oversight, faculty workload & student reports', icon: 'pie-chart-outline', color: '#F59E0B' },
-    { role: 'admin', label: 'Institute Admin', desc: 'Campus broadcasts, user rosters & institutional metrics', icon: 'shield-checkmark-outline', color: '#EF4444' },
+  const stakeholders = [
+    { label: 'Students', desc: 'Assignments, courses, attendance & placement test engines', icon: 'person-outline', color: '#F97316' },
+    { label: 'Faculty', desc: 'Attendance marking, coursework grading & lecture management', icon: 'easel-outline', color: '#10B981' },
+    { label: 'HODs', desc: 'Department analytics, curriculum metrics & faculty workload', icon: 'pie-chart-outline', color: '#F59E0B' },
+    { label: 'Administrators', desc: 'Campus broadcast circulars, user rosters & institutional reports', icon: 'shield-checkmark-outline', color: '#EF4444' },
   ];
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Top Bar */}
+      {/* Top Navbar */}
       <View style={[styles.topBar, { borderBottomColor: theme.border }]}>
         <View style={styles.brandRow}>
-          <View style={[styles.logoBadge, { backgroundColor: theme.primary }]}>
+          <View style={[styles.logoBadge, { backgroundColor: '#F97316' }]}>
             <Ionicons name="school" size={20} color="#FFFFFF" />
           </View>
           <Text style={[styles.brandTitle, { color: theme.textPrimary }]}>CampusLearn</Text>
-          <Badge label="Universal React Native" variant="primary" size="sm" style={{ marginLeft: 8 }} />
+          <Badge label="Expo SDK 54" variant="primary" size="sm" style={{ marginLeft: 8 }} />
         </View>
 
         <View style={styles.topActions}>
@@ -81,14 +86,14 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
             <Ionicons
               name={themeMode === 'dark' ? 'sunny' : 'moon'}
               size={18}
-              color={themeMode === 'dark' ? '#FBBF24' : '#6366F1'}
+              color={themeMode === 'dark' ? '#FBBF24' : '#F97316'}
             />
           </TouchableOpacity>
           <Button
             title="Sign In"
             variant="primary"
             size="small"
-            onPress={() => onNavigateLogin()}
+            onPress={onNavigateLogin}
           />
         </View>
       </View>
@@ -96,46 +101,57 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
       {/* Hero Section */}
       <View style={[styles.heroSection, { paddingHorizontal: isLargeScreen ? spacing.xxl : spacing.md }]}>
         <View style={styles.heroBadgeRow}>
-          <Badge label="✨ Multi-Platform: Android • iOS • Web" variant="info" />
+          <Badge label="✨ Android • iOS • Web" variant="primary" />
         </View>
         <Text style={[styles.heroHeading, { color: theme.textPrimary, fontSize: isLargeScreen ? 44 : 30 }]}>
           One Unified Platform for{' '}
-          <Text style={{ color: theme.primary }}>Academics, Attendance & Placements</Text>
+          <Text style={{ color: '#F97316' }}>Academics, Attendance & Placements</Text>
         </Text>
         <Text style={[styles.heroSubtext, { color: theme.textSecondary, fontSize: isLargeScreen ? 18 : 15 }]}>
-          Replace scattered WhatsApp groups and chaotic emails. CampusLearn streamlines academic workflows for Students, Faculty, HODs, and Administrators.
+          Empowering modern universities with real-time academic workflows, AI tutoring, compliance tracking, and placement readiness.
         </Text>
 
-        {/* 1-Tap Quick Explore Role Cards */}
-        <View style={styles.roleGrid}>
-          {rolePills.map((p) => (
-            <Card
-              key={p.role}
-              style={styles.roleCard}
-              onPress={() => onNavigateLogin(p.role)}
-              variant="elevated"
-            >
-              <View style={[styles.roleIconCircle, { backgroundColor: `${p.color}20` }]}>
-                <Ionicons name={p.icon} size={24} color={p.color} />
+        <View style={styles.heroBtnRow}>
+          <Button
+            title="Access Institutional Portal"
+            variant="primary"
+            size="large"
+            icon={<Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
+            onPress={onNavigateLogin}
+          />
+        </View>
+
+        {/* Stakeholder Capabilities Overview */}
+        <View style={styles.stakeholderGrid}>
+          {stakeholders.map((s, i) => (
+            <Card key={i} style={styles.stakeholderCard} variant="elevated">
+              <View style={[styles.stakeholderIconCircle, { backgroundColor: `${s.color}20` }]}>
+                <Ionicons name={s.icon as any} size={24} color={s.color} />
               </View>
-              <Text style={[styles.roleCardTitle, { color: theme.textPrimary }]}>{p.label}</Text>
-              <Text style={[styles.roleCardDesc, { color: theme.textSecondary }]}>{p.desc}</Text>
-              <View style={styles.launchRow}>
-                <Text style={[styles.launchText, { color: p.color }]}>Enter as {p.role.toUpperCase()}</Text>
-                <Ionicons name="arrow-forward" size={14} color={p.color} />
-              </View>
+              <Text style={[styles.stakeholderTitle, { color: theme.textPrimary }]}>{s.label}</Text>
+              <Text style={[styles.stakeholderDesc, { color: theme.textSecondary }]}>{s.desc}</Text>
             </Card>
           ))}
         </View>
       </View>
 
+      {/* Institutional Stats Banner */}
+      <View style={[styles.statsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {stats.map((st, i) => (
+          <View key={i} style={styles.statCol}>
+            <Text style={[styles.statBigVal, { color: '#F97316' }]}>{st.value}</Text>
+            <Text style={[styles.statLabelText, { color: theme.textSecondary }]}>{st.label}</Text>
+          </View>
+        ))}
+      </View>
+
       {/* Features Grid */}
-      <View style={[styles.featuresSection, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+      <View style={[styles.featuresSection, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
         <Text style={[styles.sectionHeading, { color: theme.textPrimary }]}>
           Engineered for Modern Universities
         </Text>
         <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
-          Everything your institution needs to accelerate student success and simplify governance.
+          Everything your institution needs to accelerate student success, track attendance compliance, and streamline placements.
         </Text>
 
         <View style={styles.featuresGrid}>
@@ -154,7 +170,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onNavigateLogin })
       {/* Footer */}
       <View style={[styles.footer, { borderTopColor: theme.border }]}>
         <Text style={[styles.footerText, { color: theme.textMuted }]}>
-          © 2026 CampusLearn Platform • Built with React Native & Expo for Android, iOS & Web
+          © 2026 CampusLearn Platform • Built with React Native (Expo SDK 54) for Android, iOS & Web
         </Text>
       </View>
     </ScrollView>
@@ -224,7 +240,10 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginBottom: spacing.xl,
   },
-  roleGrid: {
+  heroBtnRow: {
+    marginBottom: spacing.xxl,
+  },
+  stakeholderGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
@@ -232,12 +251,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 1080,
   },
-  roleCard: {
+  stakeholderCard: {
     width: '100%',
     maxWidth: 250,
     padding: spacing.lg,
   },
-  roleIconCircle: {
+  stakeholderIconCircle: {
     width: 48,
     height: 48,
     borderRadius: borderRadius.lg,
@@ -245,31 +264,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  roleCardTitle: {
+  stakeholderTitle: {
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 4,
   },
-  roleCardDesc: {
+  stakeholderDesc: {
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: spacing.md,
-    flex: 1,
   },
-  launchRow: {
+  statsBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
   },
-  launchText: {
+  statCol: {
+    alignItems: 'center',
+    padding: spacing.sm,
+    minWidth: 140,
+  },
+  statBigVal: {
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  statLabelText: {
     fontSize: 12,
-    fontWeight: '700',
+    marginTop: 4,
+    fontWeight: '500',
   },
   featuresSection: {
     paddingVertical: spacing.xxl,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
-    borderTopWidth: 1,
   },
   sectionHeading: {
     fontSize: 26,

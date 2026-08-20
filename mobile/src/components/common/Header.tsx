@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore, DEMO_USERS } from '../../store/authStore';
+import { useAuthStore } from '../../store/authStore';
 import { darkTheme, lightTheme, spacing, borderRadius } from '../../theme/theme';
 import { Button } from './Button';
 import { Role } from '../../types';
@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
     user,
     themeMode,
     toggleTheme,
-    loginAsRole,
+    logout,
     unreadNotifications,
     markNotificationsAsRead,
     serverUrl,
@@ -42,14 +42,13 @@ export const Header: React.FC<HeaderProps> = ({
   } = useAuthStore();
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
 
-  const [roleModalVisible, setRoleModalVisible] = useState(false);
   const [serverModalVisible, setServerModalVisible] = useState(false);
   const [inputUrl, setInputUrl] = useState(serverUrl);
 
   const getRoleBadgeColor = (role?: Role) => {
     switch (role) {
-      case 'student': return '#38BDF8';
-      case 'faculty': return '#818CF8';
+      case 'student': return '#F97316';
+      case 'faculty': return '#10B981';
       case 'hod': return '#F59E0B';
       case 'admin': return '#EF4444';
       default: return '#64748B';
@@ -61,6 +60,17 @@ export const Header: React.FC<HeaderProps> = ({
     await updateServerUrl(inputUrl);
     setServerModalVisible(false);
     Alert.alert('Server URL Updated! 🔗', `Mobile app will now communicate directly with database at: ${inputUrl}`);
+  };
+
+  const handleConfirmLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out of your account?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => logout(),
+      },
+    ]);
   };
 
   return (
@@ -83,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
           ) : (
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              {user ? `Hello, ${user.name.split(' ')[0]} 👋` : 'Empowering Education'}
+              {user ? `Hello, ${user.name.split(' ')[0]} 👋` : 'Institutional Academic Portal'}
             </Text>
           )}
         </View>
@@ -92,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
       <View style={styles.rightSection}>
         {rightAction}
 
-        {/* Database / Server Connection Indicator */}
+        {/* Database Connection Indicator */}
         <TouchableOpacity
           style={[styles.dbStatusPill, { backgroundColor: theme.surface, borderColor: theme.border }]}
           onPress={() => {
@@ -105,25 +115,22 @@ export const Header: React.FC<HeaderProps> = ({
           <Text style={[styles.dbStatusText, { color: theme.textSecondary }]}>DB Sync</Text>
         </TouchableOpacity>
 
-        {/* Quick Role Switcher Button */}
+        {/* User Role Tag (Read-Only) */}
         {user && (
-          <TouchableOpacity
+          <View
             style={[
               styles.roleTag,
               { backgroundColor: theme.surface, borderColor: getRoleBadgeColor(user.role) },
             ]}
-            onPress={() => setRoleModalVisible(true)}
-            activeOpacity={0.8}
           >
             <View style={[styles.roleDot, { backgroundColor: getRoleBadgeColor(user.role) }]} />
             <Text style={[styles.roleText, { color: theme.textPrimary }]}>
               {user.role.toUpperCase()}
             </Text>
-            <Ionicons name="chevron-down" size={14} color={theme.textSecondary} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
+          </View>
         )}
 
-        {/* Theme Toggle Button */}
+        {/* Theme Toggle */}
         <TouchableOpacity
           style={[styles.iconButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
           onPress={toggleTheme}
@@ -132,11 +139,11 @@ export const Header: React.FC<HeaderProps> = ({
           <Ionicons
             name={themeMode === 'dark' ? 'sunny' : 'moon'}
             size={18}
-            color={themeMode === 'dark' ? '#FBBF24' : '#6366F1'}
+            color={themeMode === 'dark' ? '#FBBF24' : '#F97316'}
           />
         </TouchableOpacity>
 
-        {/* Notifications Icon */}
+        {/* Notifications */}
         <TouchableOpacity
           style={[styles.iconButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
           onPress={markNotificationsAsRead}
@@ -149,58 +156,18 @@ export const Header: React.FC<HeaderProps> = ({
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Logout Button */}
+        {user && (
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
+            onPress={handleConfirmLogout}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        )}
       </View>
-
-      {/* Role Switcher Dialog */}
-      <Modal
-        visible={roleModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRoleModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setRoleModalVisible(false)}
-        >
-          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Switch Demo Role</Text>
-            <Text style={[styles.modalDesc, { color: theme.textSecondary }]}>
-              Instantly preview the app as different college stakeholders:
-            </Text>
-
-            {(['student', 'faculty', 'hod', 'admin'] as Role[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[
-                  styles.roleOption,
-                  {
-                    backgroundColor: user?.role === r ? theme.primaryLight : theme.surface,
-                    borderColor: user?.role === r ? theme.primary : theme.border,
-                  },
-                ]}
-                onPress={() => {
-                  loginAsRole(r);
-                  setRoleModalVisible(false);
-                }}
-              >
-                <View style={[styles.roleOptionDot, { backgroundColor: getRoleBadgeColor(r) }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.roleOptionName, { color: theme.textPrimary }]}>
-                    {DEMO_USERS[r].name}
-                  </Text>
-                  <Text style={[styles.roleOptionRole, { color: theme.textSecondary }]}>
-                    {r.toUpperCase()} • {DEMO_USERS[r].department || 'Institute Admin'}
-                  </Text>
-                </View>
-                {user?.role === r && (
-                  <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Server & Database Connection Modal */}
       <Modal
@@ -417,27 +384,5 @@ const styles = StyleSheet.create({
   quickUrlText: {
     fontSize: 11,
     fontWeight: '500',
-  },
-  roleOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  roleOptionDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  roleOptionName: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  roleOptionRole: {
-    fontSize: 12,
-    marginTop: 2,
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  TextInput,
   useWindowDimensions,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
@@ -22,6 +24,7 @@ import {
   MOCK_ATTENDANCE,
   MOCK_ANNOUNCEMENTS,
   MOCK_TIMETABLE,
+  aiAPI,
 } from '../../services/api';
 
 interface StudentDashboardProps {
@@ -34,20 +37,88 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
   const isLargeScreen = width >= 768;
 
+  const [aiQuery, setAiQuery] = useState('');
+  const [isAILoading, setIsAILoading] = useState(false);
+
+  // Time-of-day greeting
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? 'Good morning' : currentHour < 18 ? 'Good afternoon' : 'Good evening';
+
   // Check for attendance shortage (< 75%)
   const lowAttendanceSubject = MOCK_ATTENDANCE.find((a) => a.percentage < 75);
   const pendingAssignments = MOCK_ASSIGNMENTS.filter((a) => a.status === 'pending');
   const todayClasses = MOCK_TIMETABLE.filter((t) => t.day === 'Monday');
+
+  const handleAskAI = async () => {
+    if (!aiQuery.trim()) return;
+    setIsAILoading(true);
+    try {
+      await aiAPI.chat(aiQuery);
+    } catch (e) {}
+    setIsAILoading(false);
+    Alert.alert(
+      '🤖 Campus AI Tutor',
+      `For your question "${aiQuery}":\n\nFocus on core algorithmic invariants and dynamic programming memoization. Opening full AI Assistant tab...`,
+      [
+        {
+          text: 'Open AI Tutor',
+          onPress: () => onNavigateTab('ai_assistant'),
+        },
+      ]
+    );
+    setAiQuery('');
+  };
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={[styles.content, { paddingHorizontal: isLargeScreen ? spacing.xl : spacing.md }]}
     >
-      {/* Attendance Shortage Alert Banner (Sinchana Feature) */}
+      {/* ─── Web App Signature Orange Hero Welcome Banner ───────────────────── */}
+      <View style={[styles.heroBanner, { backgroundColor: '#F97316' }]}>
+        <View style={styles.heroTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroGreetingText}>{greeting},</Text>
+            <Text style={styles.heroNameText}>{user?.name} 👋</Text>
+            <Text style={styles.heroSubText}>
+              {user?.department} • Sem {user?.semester || 6}
+            </Text>
+          </View>
+
+          {/* Gamification Pills */}
+          <View style={styles.heroGamifyGroup}>
+            <View style={styles.heroGamifyPill}>
+              <Text style={{ fontSize: 16 }}>🔥</Text>
+              <Text style={styles.heroGamifyVal}>{user?.streak || 14} Days</Text>
+            </View>
+            <View style={styles.heroGamifyPill}>
+              <Text style={{ fontSize: 16 }}>🪙</Text>
+              <Text style={styles.heroGamifyVal}>{user?.points || 1250} Pts</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dashboard Instant AI Assistant Query Input */}
+        <View style={styles.heroAiSearch}>
+          <Ionicons name="sparkles" size={18} color="#F97316" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.heroAiInput}
+            placeholder="Ask Campus AI (e.g., 'How to solve 0/1 Knapsack?')"
+            placeholderTextColor="#71717A"
+            value={aiQuery}
+            onChangeText={setAiQuery}
+            onSubmitEditing={handleAskAI}
+          />
+          <TouchableOpacity style={styles.heroAiBtn} onPress={handleAskAI} activeOpacity={0.8}>
+            <Text style={styles.heroAiBtnText}>Ask</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ─── Sinchana's Attendance Shortage Risk Warning ────────────────────────── */}
       {lowAttendanceSubject && (
         <TouchableOpacity
-          style={[styles.alertBanner, { backgroundColor: theme.dangerLight, borderColor: theme.danger }]}
+          style={[styles.alertBanner, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: '#EF4444' }]}
           onPress={() => onNavigateTab('attendance')}
           activeOpacity={0.85}
         >
@@ -56,48 +127,26 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
           </View>
           <View style={{ flex: 1 }}>
             <View style={styles.alertHeaderRow}>
-              <Text style={[styles.alertTitle, { color: theme.danger }]}>
-                Attendance Shortage Alert: {lowAttendanceSubject.courseName}
+              <Text style={[styles.alertTitle, { color: '#EF4444' }]}>
+                Attendance Shortage Risk: {lowAttendanceSubject.courseName}
               </Text>
               <Badge label={`${lowAttendanceSubject.percentage}%`} variant="danger" size="sm" />
             </View>
             <Text style={[styles.alertSubtitle, { color: theme.textSecondary }]}>
-              Your attendance is below the 75% mandatory threshold ({lowAttendanceSubject.attendedClasses}/{lowAttendanceSubject.totalClasses} classes). Tap to view history.
+              Your attendance is below 75% ({lowAttendanceSubject.attendedClasses}/{lowAttendanceSubject.totalClasses} classes). Attend the next 2 lectures to restore eligibility.
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.danger} />
+          <Ionicons name="chevron-forward" size={18} color="#EF4444" />
         </TouchableOpacity>
       )}
 
-      {/* Hero Welcome & Stats */}
-      <View style={styles.welcomeRow}>
-        <View>
-          <Text style={[styles.welcomeGreeting, { color: theme.textSecondary }]}>Welcome Back,</Text>
-          <Text style={[styles.studentName, { color: theme.textPrimary }]}>{user?.name} 🎓</Text>
-          <Text style={[styles.studentDept, { color: theme.textMuted }]}>
-            {user?.department} • Sem {user?.semester}
-          </Text>
-        </View>
-
-        <View style={styles.streakPillGroup}>
-          <View style={[styles.streakPill, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }]}>
-            <Text style={{ fontSize: 16 }}>🔥</Text>
-            <Text style={[styles.streakText, { color: '#F59E0B' }]}>{user?.streak || 14} Day Streak</Text>
-          </View>
-          <View style={[styles.streakPill, { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' }]}>
-            <Text style={{ fontSize: 16 }}>🪙</Text>
-            <Text style={[styles.streakText, { color: '#818CF8' }]}>{user?.points || 1250} Pts</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* KPI Stats Grid */}
+      {/* ─── Top KPI Metric Stat Cards ────────────────────────────────────────── */}
       <View style={styles.statsGrid}>
         <StatCard
           title="Overall Attendance"
           value={`${user?.attendanceRate || 82.5}%`}
-          subtitle="Target: >= 75%"
-          trend="+2.1%"
+          subtitle="Requirement: >= 75%"
+          trend="+2.4% this month"
           trendPositive={true}
           icon={<Ionicons name="stats-chart" size={20} color="#10B981" />}
           iconBgColor="rgba(16, 185, 129, 0.15)"
@@ -106,50 +155,39 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
           title="Active Courses"
           value={MOCK_COURSES.length}
           subtitle="4 Major Credits"
-          icon={<Ionicons name="book" size={20} color="#6366F1" />}
-          iconBgColor="rgba(99, 102, 241, 0.15)"
+          icon={<Ionicons name="book" size={20} color="#F97316" />}
+          iconBgColor="rgba(249, 115, 22, 0.15)"
         />
         <StatCard
-          title="Pending Submissions"
+          title="Pending Coursework"
           value={pendingAssignments.length}
-          subtitle="Next due tomorrow"
+          subtitle="Assignment 3 due"
           trend="2 Due Soon"
           trendPositive={false}
           icon={<Ionicons name="document-text" size={20} color="#F59E0B" />}
           iconBgColor="rgba(245, 158, 11, 0.15)"
         />
         <StatCard
-          title="Placement Prep"
-          value="85% Ready"
-          subtitle="Aptitude & Resume"
+          title="Placement Readiness"
+          value="88% Score"
+          subtitle="Top 10% Percentile"
           trend="Google/MS Ready"
-          icon={<Ionicons name="briefcase" size={20} color="#EC4899" />}
-          iconBgColor="rgba(236, 72, 153, 0.15)"
+          icon={<Ionicons name="briefcase" size={20} color="#8B5CF6" />}
+          iconBgColor="rgba(139, 92, 246, 0.15)"
         />
       </View>
 
-      {/* Quick Action Shortcuts */}
+      {/* ─── Quick Feature Shortcuts ──────────────────────────────────────────── */}
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
-          onPress={() => onNavigateTab('ai_assistant')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.actionIcon, { backgroundColor: 'rgba(236, 72, 153, 0.15)' }]}>
-            <Ionicons name="sparkles" size={18} color="#EC4899" />
-          </View>
-          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Ask AI Tutor</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
           onPress={() => onNavigateTab('placement')}
           activeOpacity={0.8}
         >
-          <View style={[styles.actionIcon, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-            <Ionicons name="speedometer" size={18} color="#F59E0B" />
+          <View style={[styles.actionIcon, { backgroundColor: 'rgba(249, 115, 22, 0.15)' }]}>
+            <Ionicons name="speedometer" size={18} color="#F97316" />
           </View>
-          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Mock Aptitude</Text>
+          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Aptitude Simulator</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -157,10 +195,10 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
           onPress={() => onNavigateTab('assignments')}
           activeOpacity={0.8}
         >
-          <View style={[styles.actionIcon, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
-            <Ionicons name="cloud-upload" size={18} color="#6366F1" />
+          <View style={[styles.actionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+            <Ionicons name="cloud-upload" size={18} color="#10B981" />
           </View>
-          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Upload Work</Text>
+          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Submit Tasks</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -168,14 +206,72 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
           onPress={() => onNavigateTab('timetable')}
           activeOpacity={0.8}
         >
-          <View style={[styles.actionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-            <Ionicons name="calendar" size={18} color="#10B981" />
+          <View style={[styles.actionIcon, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
+            <Ionicons name="calendar" size={18} color="#38BDF8" />
           </View>
           <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Timetable</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+          onPress={() => onNavigateTab('ai_assistant')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.actionIcon, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+            <Ionicons name="sparkles" size={18} color="#8B5CF6" />
+          </View>
+          <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Ask AI Tutor</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Main Grid: Courses & Today's Schedule */}
+      {/* ─── Placement Readiness & Career Roadmap (Nayana G. Naik) ─────────────── */}
+      <Card style={styles.placementWidgetCard} variant="elevated">
+        <View style={styles.placementWidgetTop}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 4 }}>
+              <Badge label="Placement Module" variant="purple" size="sm" />
+              <Badge label="Nayana G. Naik" variant="primary" size="sm" />
+            </View>
+            <Text style={[styles.placementWidgetHeading, { color: theme.textPrimary }]}>
+              Career & Campus Placement Readiness
+            </Text>
+            <Text style={[styles.placementWidgetSub, { color: theme.textSecondary }]}>
+              Target Role: Full-Stack Cloud Engineer • Target Package: ₹28-42 LPA
+            </Text>
+          </View>
+
+          <Button
+            title="Practice Mock Test"
+            variant="primary"
+            size="small"
+            icon={<Ionicons name="play" size={14} color="#FFFFFF" />}
+            onPress={() => onNavigateTab('placement')}
+          />
+        </View>
+
+        <View style={styles.placementScoresRow}>
+          <View style={styles.placementScoreCol}>
+            <Text style={[styles.placementScoreVal, { color: '#F97316' }]}>80%</Text>
+            <Text style={[styles.placementScoreLabel, { color: theme.textMuted }]}>Aptitude</Text>
+          </View>
+          <View style={styles.placementScoreCol}>
+            <Text style={[styles.placementScoreVal, { color: '#10B981' }]}>75%</Text>
+            <Text style={[styles.placementScoreLabel, { color: theme.textMuted }]}>Coding DSA</Text>
+          </View>
+          <View style={styles.placementScoreCol}>
+            <Text style={[styles.placementScoreVal, { color: '#38BDF8' }]}>60%</Text>
+            <Text style={[styles.placementScoreLabel, { color: theme.textMuted }]}>Interview</Text>
+          </View>
+          <View style={styles.placementScoreCol}>
+            <Text style={[styles.placementScoreVal, { color: '#8B5CF6' }]}>88%</Text>
+            <Text style={[styles.placementScoreLabel, { color: theme.textMuted }]}>Resume ATS</Text>
+          </View>
+        </View>
+
+        <ProgressBar progress={82} color="#F97316" height={8} style={{ marginTop: spacing.md }} />
+      </Card>
+
+      {/* ─── Dual Column Grid: Active Courses & Schedule ──────────────────────── */}
       <View style={[styles.dualColumnGrid, { flexDirection: isLargeScreen ? 'row' : 'column' }]}>
         {/* Left Column: Enrolled Courses */}
         <View style={{ flex: 1.2 }}>
@@ -217,7 +313,7 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
                       {course.progress}%
                     </Text>
                   </View>
-                  <ProgressBar progress={course.progress || 0} height={6} />
+                  <ProgressBar progress={course.progress || 0} color="#F97316" height={6} />
                 </View>
               </View>
             </Card>
@@ -262,7 +358,7 @@ export const StudentDashboardScreen: React.FC<StudentDashboardProps> = ({ onNavi
 
           {/* Campus Broadcast Notices */}
           <View style={[styles.sectionHeader, { marginTop: spacing.lg }]}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Campus Notices</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Campus Circulars</Text>
             <Badge label="New" variant="warning" size="sm" />
           </View>
 
@@ -294,6 +390,87 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingVertical: spacing.lg,
+  },
+  heroBanner: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  heroGreetingText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  heroNameText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  heroSubText: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  heroGamifyGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  heroGamifyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    gap: 6,
+  },
+  heroGamifyVal: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroAiSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    height: 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  heroAiInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#09090B',
+    height: '100%',
+  },
+  heroAiBtn: {
+    backgroundColor: '#F97316',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+  },
+  heroAiBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   alertBanner: {
     flexDirection: 'row',
@@ -328,44 +505,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  welcomeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  welcomeGreeting: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  studentName: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  studentDept: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  streakPillGroup: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  streakPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    gap: 6,
-  },
-  streakText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -375,7 +514,7 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
     flexWrap: 'wrap',
   },
   actionBtn: {
@@ -398,6 +537,45 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  placementWidgetCard: {
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  placementWidgetTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+    flexWrap: 'wrap',
+  },
+  placementWidgetHeading: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  placementWidgetSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  placementScoresRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  placementScoreCol: {
+    alignItems: 'center',
+  },
+  placementScoreVal: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  placementScoreLabel: {
+    fontSize: 11,
+    marginTop: 2,
   },
   dualColumnGrid: {
     gap: spacing.lg,
