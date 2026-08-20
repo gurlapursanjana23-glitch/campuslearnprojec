@@ -1,55 +1,93 @@
 const express = require('express');
 const router = express.Router();
-const Announcement = require('../models/Announcement');
+const { supabase } = require('../config/db');
 const { protect, authorize } = require('../middleware/auth');
-const { successResponse, paginatedResponse } = require('../utils/response');
+const { successResponse, errorResponse, paginatedResponse } = require('../utils/response');
 
 router.get('/', protect, async (req, res, next) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const query = {
-      isActive: true,
-      $or: [
-        { expiresAt: null },
-        { expiresAt: { $gt: new Date() } },
-      ],
-    };
 
-    // Filter by role
+    let query = supabase
+      .from('announcements')
+      .select('*, author:users(id, name, avatar, role), department:departments(id, name)', { count: 'exact' });
+
     if (req.user.role === 'student') {
-      query.targetAudience = { $in: ['all', 'students'] };
+      query = query.in('target_role', ['all', 'student']);
     } else if (req.user.role === 'faculty') {
-      query.targetAudience = { $in: ['all', 'faculty'] };
+      query = query.in('target_role', ['all', 'faculty']);
     }
 
-    const skip = (page - 1) * limit;
-    const [announcements, total] = await Promise.all([
-      Announcement.find(query)
-        .populate('author', 'name avatar role')
-        .populate('course', 'title')
-        .populate('department', 'name')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Announcement.countDocuments(query),
-    ]);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    paginatedResponse(res, announcements, page, limit, total);
-  } catch (error) { next(error); }
+    const { data: announcements, count, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Supabase announcements error:', error);
+      return errorResponse(res, 500, 'Failed to fetch announcements.');
+    }
+
+    const formatted = (announcements || []).map((a) => ({
+      ...a,
+      _id: a.id,
+      author: a.author ? { ...a.author, _id: a.author.id } : null,
+    }));
+
+    paginatedResponse(res, formatted, pageNum, limitNum, count || 0, 'Announcements fetched successfully.');
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post('/', protect, authorize('faculty', 'hod', 'admin'), async (req, res, next) => {
   try {
-    const announcement = await Announcement.create({ ...req.body, author: req.user._id });
+    const { title, content, isImportant, targetRole, departmentId } = req.body;
+
+    const { data: announcement, error } = await supabase
+      .from('announcements')
+      .insert({
+        title,
+        content,
+        author_id: req.user.id,
+        department_id: departmentId || null,
+        is_important: isImportant || false,
+        target_role: targetRole || 'all',
+      })
+      .select('*, author:users(id, name, avatar, role)')
+      .single();
+
+    if (error || !announcement) {
+      console.error('Supabase create announcement error:', error);
+      return errorResponse(res, 400, 'Failed to create announcement.');
+    }
+
+    announcement._id = announcement.id;
     successResponse(res, 201, 'Announcement posted.', announcement);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.delete('/:id', protect, authorize('faculty', 'hod', 'admin'), async (req, res, next) => {
   try {
-    await Announcement.findOneAndDelete({ _id: req.params.id, author: req.user._id });
+    const { error } = await supabase
+      .from('announcements')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) {
+      return errorResponse(res, 400, 'Failed to delete announcement.');
+    }
+
     successResponse(res, 200, 'Announcement deleted.');
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

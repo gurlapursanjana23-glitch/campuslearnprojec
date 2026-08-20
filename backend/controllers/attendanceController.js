@@ -1,102 +1,123 @@
-const Attendance = require('../models/Attendance');
+const { supabase } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/response');
 
-// ─── @desc    Mark attendance
+// ─── @desc    Mark attendance for multiple students
 // ─── @route   POST /api/attendance
 // ─── @access  Private (Faculty)
 exports.markAttendance = async (req, res, next) => {
   try {
-    const { course, date, topic, records } = req.body;
-    const existing = await Attendance.findOne({ course, date: new Date(date) });
-    if (existing) {
-      return errorResponse(res, 400, 'Attendance already marked for this date.');
+    const { courseId, date, records } = req.body; // records: [{ studentId, status, remarks }]
+
+    if (!courseId || !date || !Array.isArray(records)) {
+      return errorResponse(res, 400, 'Please provide courseId, date, and attendance records.');
     }
 
-    const attendance = await Attendance.create({
-      course,
-      faculty: req.user._id,
-      date: new Date(date),
-      topic,
-      records,
-    });
+    const attendanceRows = records.map((r) => ({
+      course_id: courseId,
+      student_id: r.studentId,
+      marked_by: req.user.id,
+      date,
+      status: r.status || 'present',
+      remarks: r.remarks || null,
+    }));
 
-    successResponse(res, 201, 'Attendance marked.', attendance);
-  } catch (error) { next(error); }
+    const { data, error } = await supabase
+      .from('attendance')
+      .upsert(attendanceRows, { onConflict: 'course_id,student_id,date' })
+      .select();
+
+    if (error) {
+      console.error('Supabase markAttendance error:', error);
+      return errorResponse(res, 400, 'Failed to mark attendance.');
+    }
+
+    successResponse(res, 200, 'Attendance marked successfully!', data);
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ─── @desc    Get attendance for a course
-// ─── @route   GET /api/attendance?course=id
+// ─── @desc    Get attendance records for a course
+// ─── @route   GET /api/attendance
 // ─── @access  Private
 exports.getAttendance = async (req, res, next) => {
   try {
-    const { course, startDate, endDate } = req.query;
-    const query = {};
-    if (course) query.course = course;
-    if (startDate || endDate) {
-      query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate);
-      if (endDate) query.date.$lte = new Date(endDate);
+    const { courseId, date } = req.query;
+
+    let query = supabase
+      .from('attendance')
+      .select('*, student:users(id, name, roll_number, avatar), course:courses(id, title, code)');
+
+    if (courseId) query = query.eq('course_id', courseId);
+    if (date) query = query.eq('date', date);
+
+    const { data: records, error } = await query.order('date', { ascending: false });
+
+    if (error) {
+      return errorResponse(res, 500, 'Failed to fetch attendance records.');
     }
 
-    const records = await Attendance.find(query)
-      .populate('course', 'title')
-      .populate('records.student', 'name rollNumber avatar')
-      .sort({ date: -1 });
+    const formatted = (records || []).map((r) => ({
+      ...r,
+      _id: r.id,
+      student: r.student ? { ...r.student, _id: r.student.id } : null,
+    }));
 
-    successResponse(res, 200, 'Attendance fetched.', records);
-  } catch (error) { next(error); }
+    successResponse(res, 200, 'Attendance records fetched successfully.', formatted);
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ─── @desc    Get student's own attendance summary
+// ─── @desc    Get current student's personal attendance summary
 // ─── @route   GET /api/attendance/my-attendance
 // ─── @access  Private (Student)
 exports.getMyAttendance = async (req, res, next) => {
   try {
-    const { course } = req.query;
-    const query = course ? { course } : {};
+    const { data: records, error } = await supabase
+      .from('attendance')
+      .select('*, course:courses(id, title, code)')
+      .eq('student_id', req.user.id);
 
-    const records = await Attendance.find({
-      ...query,
-      'records.student': req.user._id,
-    }).populate('course', 'title');
+    if (error) {
+      return errorResponse(res, 500, 'Failed to fetch personal attendance.');
+    }
 
-    // Calculate summary per course
-    const summary = {};
-    records.forEach(att => {
-      const courseId = att.course._id.toString();
-      const courseTitle = att.course.title;
-      if (!summary[courseId]) {
-        summary[courseId] = { course: courseId, title: courseTitle, total: 0, present: 0, absent: 0, late: 0 };
-      }
-      summary[courseId].total++;
-      const myRecord = att.records.find(r => r.student.toString() === req.user._id.toString());
-      if (myRecord) {
-        if (myRecord.status === 'present') summary[courseId].present++;
-        else if (myRecord.status === 'late') { summary[courseId].late++; summary[courseId].present++; }
-        else summary[courseId].absent++;
-      }
+    const total = records ? records.length : 0;
+    const presentCount = records ? records.filter((r) => r.status === 'present').length : 0;
+    const percentage = total > 0 ? ((presentCount / total) * 100).toFixed(1) : 100;
+
+    successResponse(res, 200, 'Personal attendance fetched successfully.', {
+      totalClasses: total,
+      presentClasses: presentCount,
+      percentage: parseFloat(percentage),
+      records: (records || []).map((r) => ({ ...r, _id: r.id })),
     });
-
-    const summaryArray = Object.values(summary).map(s => ({
-      ...s,
-      percentage: s.total > 0 ? Math.round((s.present / s.total) * 100) : 0,
-    }));
-
-    successResponse(res, 200, 'Attendance summary fetched.', summaryArray);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ─── @desc    Update attendance record
+// ─── @desc    Update single attendance record
 // ─── @route   PUT /api/attendance/:id
 // ─── @access  Private (Faculty)
 exports.updateAttendance = async (req, res, next) => {
   try {
-    const attendance = await Attendance.findOneAndUpdate(
-      { _id: req.params.id, faculty: req.user._id },
-      req.body,
-      { new: true }
-    );
-    if (!attendance) return errorResponse(res, 404, 'Attendance record not found.');
-    successResponse(res, 200, 'Attendance updated.', attendance);
-  } catch (error) { next(error); }
+    const { status, remarks } = req.body;
+    const { data: record, error } = await supabase
+      .from('attendance')
+      .update({ status, remarks })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error || !record) {
+      return errorResponse(res, 400, 'Failed to update attendance record.');
+    }
+
+    record._id = record.id;
+    successResponse(res, 200, 'Attendance record updated successfully.', record);
+  } catch (error) {
+    next(error);
+  }
 };

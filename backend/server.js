@@ -3,14 +3,14 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
+const { connectDB } = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 const rateLimiter = require('./middleware/rateLimiter');
 
 // Load env vars
 dotenv.config();
 
-// Connect to MongoDB
+// Connect to Supabase PostgreSQL
 connectDB();
 
 const app = express();

@@ -1,38 +1,45 @@
-const Assignment = require('../models/Assignment');
-const Submission = require('../models/Submission');
-const Notification = require('../models/Notification');
-const User = require('../models/User');
+const { supabase } = require('../config/db');
 const { successResponse, errorResponse, paginatedResponse } = require('../utils/response');
 
-// ─── @desc    Get assignments (for course or user)
+// ─── @desc    Get all assignments (filtered by course / student)
 // ─── @route   GET /api/assignments
 // ─── @access  Private
 exports.getAssignments = async (req, res, next) => {
   try {
-    const { course, page = 1, limit = 10 } = req.query;
-    const query = {};
-    if (course) {
-      query.course = course;
-    } else if (req.user.role === 'student') {
-      const user = await User.findById(req.user._id).select('enrolledCourses');
-      query.course = { $in: user.enrolledCourses };
+    const { courseId, page = 1, limit = 10 } = req.query;
+
+    let query = supabase
+      .from('assignments')
+      .select('*, course:courses(id, title, code), instructor:users(id, name)', { count: 'exact' });
+
+    if (courseId) {
+      query = query.eq('course_id', courseId);
     }
-    
-    if (req.user.role === 'faculty') query.faculty = req.user._id;
 
-    const skip = (page - 1) * limit;
-    const [assignments, total] = await Promise.all([
-      Assignment.find(query)
-        .populate('course', 'title')
-        .populate('faculty', 'name')
-        .sort({ dueDate: 1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Assignment.countDocuments(query),
-    ]);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    paginatedResponse(res, assignments, page, limit, total);
-  } catch (error) { next(error); }
+    const { data: assignments, count, error } = await query
+      .order('due_date', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      return errorResponse(res, 500, 'Failed to fetch assignments.');
+    }
+
+    const formattedAssignments = (assignments || []).map((a) => ({
+      ...a,
+      _id: a.id,
+      dueDate: a.due_date,
+      maxMarks: a.max_marks,
+    }));
+
+    paginatedResponse(res, formattedAssignments, pageNum, limitNum, count || 0, 'Assignments fetched successfully.');
+  } catch (error) {
+    next(error);
+  }
 };
 
 // ─── @desc    Create assignment
@@ -40,52 +47,34 @@ exports.getAssignments = async (req, res, next) => {
 // ─── @access  Private (Faculty)
 exports.createAssignment = async (req, res, next) => {
   try {
-    const attachments = req.files?.map(f => ({ name: f.originalname, url: f.path, publicId: f.filename })) || [];
-    const assignment = await Assignment.create({ ...req.body, faculty: req.user._id, attachments });
+    const { title, description, courseId, dueDate, maxMarks, fileAttachment } = req.body;
 
-    // Notify enrolled students
-    const Course = require('../models/Course');
-    const course = await Course.findById(req.body.course).select('enrolledStudents title');
-    if (course) {
-      const notifications = course.enrolledStudents.map(studentId => ({
-        recipient: studentId,
-        sender: req.user._id,
-        type: 'assignment',
-        title: 'New Assignment Posted',
-        message: `New assignment "${assignment.title}" in ${course.title}`,
-        link: `/student/assignments`,
-      }));
-      await Notification.insertMany(notifications);
+    const { data: assignment, error } = await supabase
+      .from('assignments')
+      .insert({
+        title,
+        description,
+        course_id: courseId,
+        instructor_id: req.user.id,
+        due_date: new Date(dueDate).toISOString(),
+        max_marks: maxMarks || 100,
+        file_attachment: fileAttachment || null,
+      })
+      .select('*, course:courses(id, title, code)')
+      .single();
+
+    if (error || !assignment) {
+      console.error('Supabase createAssignment error:', error);
+      return errorResponse(res, 400, 'Failed to create assignment.');
     }
 
-    successResponse(res, 201, 'Assignment created.', assignment);
-  } catch (error) { next(error); }
-};
+    assignment._id = assignment.id;
+    assignment.dueDate = assignment.due_date;
 
-// ─── @desc    Update assignment
-// ─── @route   PUT /api/assignments/:id
-// ─── @access  Private (Faculty)
-exports.updateAssignment = async (req, res, next) => {
-  try {
-    const assignment = await Assignment.findOneAndUpdate(
-      { _id: req.params.id, faculty: req.user._id },
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!assignment) return errorResponse(res, 404, 'Assignment not found.');
-    successResponse(res, 200, 'Assignment updated.', assignment);
-  } catch (error) { next(error); }
-};
-
-// ─── @desc    Delete assignment
-// ─── @route   DELETE /api/assignments/:id
-// ─── @access  Private (Faculty)
-exports.deleteAssignment = async (req, res, next) => {
-  try {
-    const assignment = await Assignment.findOneAndDelete({ _id: req.params.id, faculty: req.user._id });
-    if (!assignment) return errorResponse(res, 404, 'Assignment not found.');
-    successResponse(res, 200, 'Assignment deleted.');
-  } catch (error) { next(error); }
+    successResponse(res, 201, 'Assignment created successfully.', assignment);
+  } catch (error) {
+    next(error);
+  }
 };
 
 // ─── @desc    Submit assignment
@@ -93,95 +82,129 @@ exports.deleteAssignment = async (req, res, next) => {
 // ─── @access  Private (Student)
 exports.submitAssignment = async (req, res, next) => {
   try {
-    const assignment = await Assignment.findById(req.params.id);
-    if (!assignment) return errorResponse(res, 404, 'Assignment not found.');
+    const { fileUrl, textContent } = req.body;
 
-    const Course = require('../models/Course');
-    const course = await Course.findOne({ _id: assignment.course, enrolledStudents: req.user._id });
-    if (!course) {
-      return errorResponse(res, 403, 'You are not enrolled in this course.');
+    const { data: submission, error } = await supabase
+      .from('submissions')
+      .upsert({
+        assignment_id: req.params.id,
+        student_id: req.user.id,
+        file_url: fileUrl || null,
+        text_content: textContent || null,
+        submitted_at: new Date().toISOString(),
+        status: 'submitted',
+      })
+      .select()
+      .single();
+
+    if (error || !submission) {
+      return errorResponse(res, 400, 'Failed to submit assignment.');
     }
 
-    const isLate = new Date() > new Date(assignment.dueDate);
-    if (isLate && !assignment.allowLateSubmission) {
-      return errorResponse(res, 400, 'Submission deadline has passed.');
-    }
+    submission._id = submission.id;
 
-    const files = req.files?.map(f => ({ name: f.originalname, url: f.path, publicId: f.filename })) || [];
-    const existing = await Submission.findOne({ assignment: req.params.id, student: req.user._id });
-
-    let submission;
-    if (existing) {
-      submission = await Submission.findByIdAndUpdate(
-        existing._id,
-        { content: req.body.content, files, submittedAt: new Date(), isLate },
-        { new: true }
-      );
-    } else {
-      submission = await Submission.create({
-        assignment: req.params.id,
-        student: req.user._id,
-        course: assignment.course,
-        content: req.body.content,
-        files,
-        isLate,
-      });
-    }
-
-    // Notify faculty
-    await Notification.create({
-      recipient: assignment.faculty,
-      sender: req.user._id,
-      type: 'assignment',
-      title: 'Assignment Submitted',
-      message: `${req.user.name} submitted "${assignment.title}"`,
-      link: `/faculty/assignments/${assignment._id}`,
-    });
-
-    successResponse(res, 201, 'Assignment submitted!', submission);
-  } catch (error) { next(error); }
+    successResponse(res, 200, 'Assignment submitted successfully!', submission);
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ─── @desc    Get submissions for an assignment (Faculty)
+// ─── @desc    Get submissions for an assignment
 // ─── @route   GET /api/assignments/:id/submissions
-// ─── @access  Private (Faculty)
+// ─── @access  Private (Faculty/HOD/Admin)
 exports.getSubmissions = async (req, res, next) => {
   try {
-    const assignment = await Assignment.findOne({ _id: req.params.id, faculty: req.user._id });
-    if (!assignment && req.user.role !== 'admin') {
-      return errorResponse(res, 403, 'Not authorized to view these submissions.');
+    const { data: submissions, error } = await supabase
+      .from('submissions')
+      .select('*, student:users(id, name, email, roll_number, avatar)')
+      .eq('assignment_id', req.params.id)
+      .order('submitted_at', { ascending: false });
+
+    if (error) {
+      return errorResponse(res, 500, 'Failed to fetch submissions.');
     }
 
-    const submissions = await Submission.find({ assignment: req.params.id })
-      .populate('student', 'name email rollNumber avatar')
-      .sort({ submittedAt: -1 });
-    successResponse(res, 200, 'Submissions fetched.', submissions);
-  } catch (error) { next(error); }
+    const formatted = (submissions || []).map((s) => ({
+      ...s,
+      _id: s.id,
+      student: s.student ? { ...s.student, _id: s.student.id } : null,
+    }));
+
+    successResponse(res, 200, 'Submissions fetched successfully.', formatted);
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ─── @desc    Grade a submission
-// ─── @route   PUT /api/assignments/submissions/:id/grade
+// ─── @desc    Update assignment
+// ─── @route   PUT /api/assignments/:id
+// ─── @access  Private (Faculty)
+exports.updateAssignment = async (req, res, next) => {
+  try {
+    const { data: assignment, error } = await supabase
+      .from('assignments')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error || !assignment) {
+      return errorResponse(res, 404, 'Assignment not found or update failed.');
+    }
+
+    assignment._id = assignment.id;
+    successResponse(res, 200, 'Assignment updated successfully.', assignment);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── @desc    Delete assignment
+// ─── @route   DELETE /api/assignments/:id
+// ─── @access  Private (Faculty)
+exports.deleteAssignment = async (req, res, next) => {
+  try {
+    const { error } = await supabase
+      .from('assignments')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) {
+      return errorResponse(res, 400, 'Failed to delete assignment.');
+    }
+
+    successResponse(res, 200, 'Assignment deleted successfully.');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── @desc    Grade submission
+// ─── @route   PUT /api/assignments/submissions/:submissionId/grade
 // ─── @access  Private (Faculty)
 exports.gradeSubmission = async (req, res, next) => {
   try {
     const { marks, feedback } = req.body;
-    const submission = await Submission.findByIdAndUpdate(
-      req.params.id,
-      { marks, feedback, status: 'graded', gradedBy: req.user._id, gradedAt: new Date() },
-      { new: true }
-    ).populate('student', 'name');
 
-    if (!submission) return errorResponse(res, 404, 'Submission not found.');
+    const { data: submission, error } = await supabase
+      .from('submissions')
+      .update({
+        marks: parseFloat(marks),
+        feedback,
+        status: 'graded',
+      })
+      .eq('id', req.params.submissionId || req.params.id)
+      .select()
+      .single();
 
-    // Notify student
-    await Notification.create({
-      recipient: submission.student._id,
-      type: 'grade',
-      title: 'Assignment Graded',
-      message: `Your submission has been graded. Marks: ${marks}`,
-      link: `/student/assignments`,
-    });
+    if (error || !submission) {
+      return errorResponse(res, 400, 'Failed to grade submission.');
+    }
 
-    successResponse(res, 200, 'Graded successfully.', submission);
-  } catch (error) { next(error); }
+    submission._id = submission.id;
+
+    successResponse(res, 200, 'Submission graded successfully.', submission);
+  } catch (error) {
+    next(error);
+  }
 };

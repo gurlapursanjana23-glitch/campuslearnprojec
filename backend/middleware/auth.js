@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { supabase } = require('../config/db');
 const sessionStore = require('../config/supabase');
 
 /**
- * Middleware: Verify JWT, validate session state in Supabase/backend, and attach user to request
+ * Middleware: Verify JWT, validate session state in Supabase, and attach user to request
  */
 const protect = async (req, res, next) => {
   try {
@@ -18,19 +18,28 @@ const protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password -refreshToken');
+    
+    // Supabase User Lookup
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', decoded.id)
+      .single();
 
-    if (!user) {
+    if (error || !user) {
       return res.status(401).json({ success: false, message: 'User no longer exists.', code: 'USER_NOT_FOUND' });
     }
 
-    if (!user.isActive) {
+    if (!user.is_active) {
       return res.status(401).json({ success: false, message: 'Account is deactivated.', code: 'ACCOUNT_DEACTIVATED' });
     }
 
+    // Map _id property for backward compatibility
+    user._id = user.id;
+
     // Session Enforcement: Validate session ID if present in decoded token
     if (decoded.sessionId) {
-      const isValidSession = await sessionStore.validateSession(decoded.sessionId, user._id);
+      const isValidSession = await sessionStore.validateSession(decoded.sessionId, user.id);
       if (!isValidSession) {
         return res.status(401).json({
           success: false,

@@ -1,8 +1,4 @@
-const Course = require('../models/Course');
-const Module = require('../models/Module');
-const Lesson = require('../models/Lesson');
-const User = require('../models/User');
-const Notification = require('../models/Notification');
+const { supabase } = require('../config/db');
 const { successResponse, errorResponse, paginatedResponse } = require('../utils/response');
 
 // ─── @desc    Get all courses (with search, filter, pagination)
@@ -11,74 +7,78 @@ const { successResponse, errorResponse, paginatedResponse } = require('../utils/
 exports.getCourses = async (req, res, next) => {
   try {
     const { search, department, semester, faculty, enrolled, page = 1, limit = 12 } = req.query;
-    const query = {};
 
-    if (search) query.$text = { $search: search };
-    if (department) query.department = department;
-    if (semester) query.semester = parseInt(semester);
+    let query = supabase
+      .from('courses')
+      .select('*, instructor:users(id, name, avatar), department:departments(id, name, code)', { count: 'exact' });
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,code.ilike.%${search}%`);
+    }
+    if (department) {
+      query = query.eq('department_id', department);
+    }
+    if (semester) {
+      query = query.eq('semester', parseInt(semester));
+    }
     if (faculty) {
-      query.faculty = faculty;
+      query = query.eq('instructor_id', faculty);
     } else if (req.user && req.user.role === 'faculty') {
-      // If a faculty member requests courses without specifying a faculty ID, default to their own courses.
-      query.faculty = req.user._id;
+      query = query.eq('instructor_id', req.user.id);
     }
 
-    // Students/public only see published+approved courses
     if (!req.user || req.user.role === 'student') {
-      query.isPublished = true;
-      query.isApproved = true;
-      
-      if (req.user) {
-        // Students should only see courses for their own semester
-        if (req.user.semester) {
-          query.semester = req.user.semester;
-        }
-        
-        // If they only want enrolled courses
-        if (enrolled === 'true') {
-          query.enrolledStudents = req.user._id;
-        }
+      query = query.eq('is_published', true).eq('is_approved', true);
+      if (req.user && req.user.semester) {
+        query = query.eq('semester', req.user.semester);
       }
     }
 
-    const skip = (page - 1) * limit;
-    const [courses, total] = await Promise.all([
-      Course.find(query)
-        .populate('faculty', 'name avatar designation')
-        .populate('department', 'name code')
-        .select('-modules')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Course.countDocuments(query),
-    ]);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    paginatedResponse(res, courses, page, limit, total, 'Courses fetched successfully.');
+    const { data: courses, count, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Supabase getCourses error:', error);
+      return errorResponse(res, 500, 'Failed to fetch courses.');
+    }
+
+    const formattedCourses = (courses || []).map((c) => ({
+      ...c,
+      _id: c.id,
+      faculty: c.instructor,
+    }));
+
+    paginatedResponse(res, formattedCourses, pageNum, limitNum, count || 0, 'Courses fetched successfully.');
   } catch (error) {
     next(error);
   }
 };
 
-// ─── @desc    Get single course with all modules and lessons
+// ─── @desc    Get single course by ID
 // ─── @route   GET /api/courses/:id
 // ─── @access  Public/Private
 exports.getCourse = async (req, res, next) => {
   try {
-    const course = await Course.findById(req.params.id)
-      .populate('faculty', 'name email avatar designation bio')
-      .populate('department', 'name code')
-      .populate('enrolledStudents', 'name email avatar role')
-      .populate({
-        path: 'modules',
-        populate: { path: 'lessons', select: 'title type duration isFree isPublished order documentUrl documentName videoUrl' },
-      });
+    const { data: course, error } = await supabase
+      .from('courses')
+      .select('*, instructor:users(id, name, avatar), department:departments(id, name, code)')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!course) return errorResponse(res, 404, 'Course not found.');
+    if (error || !course) {
+      return errorResponse(res, 404, 'Course not found.');
+    }
 
-    // Increment view count
-    await Course.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
+    course._id = course.id;
+    course.faculty = course.instructor;
 
-    successResponse(res, 200, 'Course fetched.', course);
+    successResponse(res, 200, 'Course fetched successfully.', course);
   } catch (error) {
     next(error);
   }
@@ -86,20 +86,36 @@ exports.getCourse = async (req, res, next) => {
 
 // ─── @desc    Create course
 // ─── @route   POST /api/courses
-// ─── @access  Private (Faculty)
+// ─── @access  Private (Faculty/HOD/Admin)
 exports.createCourse = async (req, res, next) => {
   try {
-    const {
-      title, description, shortDescription, department, semester, credits,
-      year, subjectCode, tags, level, learningOutcomes, prerequisites, language, isPublished
-    } = req.body;
+    const { title, code, description, department, semester, credits, category } = req.body;
 
-    const course = await Course.create({
-      title, description, shortDescription, department: department || req.user.department, semester, credits,
-      year, subjectCode, tags, level, learningOutcomes, prerequisites, language, isPublished,
-      faculty: req.user._id,
-      thumbnail: req.file?.path || '',
-    });
+    const { data: course, error } = await supabase
+      .from('courses')
+      .insert({
+        title,
+        code,
+        description,
+        department_id: department || null,
+        instructor_id: req.user.id,
+        semester: semester || 1,
+        credits: credits || 3,
+        category: category || 'Core',
+        is_published: true,
+        is_approved: true,
+      })
+      .select('*, instructor:users(id, name, avatar), department:departments(id, name, code)')
+      .single();
+
+    if (error || !course) {
+      console.error('Supabase createCourse error:', error);
+      return errorResponse(res, 400, 'Failed to create course. Code may already exist.');
+    }
+
+    course._id = course.id;
+    course.faculty = course.instructor;
+
     successResponse(res, 201, 'Course created successfully.', course);
   } catch (error) {
     next(error);
@@ -108,20 +124,24 @@ exports.createCourse = async (req, res, next) => {
 
 // ─── @desc    Update course
 // ─── @route   PUT /api/courses/:id
-// ─── @access  Private (Faculty / Admin)
+// ─── @access  Private (Faculty/HOD/Admin)
 exports.updateCourse = async (req, res, next) => {
   try {
-    let course = await Course.findById(req.params.id);
-    if (!course) return errorResponse(res, 404, 'Course not found.');
+    const { data: course, error } = await supabase
+      .from('courses')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select('*, instructor:users(id, name, avatar), department:departments(id, name, code)')
+      .single();
 
-    if (course.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return errorResponse(res, 403, 'Not authorized to update this course.');
+    if (error || !course) {
+      return errorResponse(res, 404, 'Course not found or update failed.');
     }
 
-    if (req.file) req.body.thumbnail = req.file.path;
-    course = await Course.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    course._id = course.id;
+    course.faculty = course.instructor;
 
-    successResponse(res, 200, 'Course updated.', course);
+    successResponse(res, 200, 'Course updated successfully.', course);
   } catch (error) {
     next(error);
   }
@@ -129,50 +149,43 @@ exports.updateCourse = async (req, res, next) => {
 
 // ─── @desc    Delete course
 // ─── @route   DELETE /api/courses/:id
-// ─── @access  Private (Faculty / Admin)
+// ─── @access  Private (Faculty owner / Admin)
 exports.deleteCourse = async (req, res, next) => {
   try {
-    const course = await Course.findById(req.params.id);
-    if (!course) return errorResponse(res, 404, 'Course not found.');
+    const { error } = await supabase
+      .from('courses')
+      .delete()
+      .eq('id', req.params.id);
 
-    if (course.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return errorResponse(res, 403, 'Not authorized.');
+    if (error) {
+      return errorResponse(res, 400, 'Failed to delete course.');
     }
 
-    await Course.findByIdAndDelete(req.params.id);
-    successResponse(res, 200, 'Course deleted.');
+    successResponse(res, 200, 'Course deleted successfully.');
   } catch (error) {
     next(error);
   }
 };
 
-// ─── @desc    Enroll in a course
+// ─── @desc    Enroll in course
 // ─── @route   POST /api/courses/:id/enroll
 // ─── @access  Private (Student)
 exports.enrollCourse = async (req, res, next) => {
   try {
-    const course = await Course.findById(req.params.id);
-    if (!course) return errorResponse(res, 404, 'Course not found.');
+    const { data, error } = await supabase
+      .from('course_enrollments')
+      .insert({
+        course_id: req.params.id,
+        student_id: req.user.id,
+      })
+      .select()
+      .single();
 
-    const alreadyEnrolled = course.enrolledStudents.includes(req.user._id);
-    if (alreadyEnrolled) return errorResponse(res, 400, 'Already enrolled in this course.');
+    if (error) {
+      return errorResponse(res, 400, 'Already enrolled in this course or invalid course.');
+    }
 
-    await Promise.all([
-      Course.findByIdAndUpdate(req.params.id, { $addToSet: { enrolledStudents: req.user._id } }),
-      User.findByIdAndUpdate(req.user._id, { $addToSet: { enrolledCourses: req.params.id } }),
-    ]);
-
-    // Notify faculty
-    await Notification.create({
-      recipient: course.faculty,
-      sender: req.user._id,
-      type: 'course',
-      title: 'New Student Enrolled',
-      message: `${req.user.name} enrolled in ${course.title}`,
-      link: `/faculty/courses/${course._id}`,
-    });
-
-    successResponse(res, 200, 'Enrolled successfully!');
+    successResponse(res, 200, 'Successfully enrolled in course!', data);
   } catch (error) {
     next(error);
   }
@@ -180,41 +193,45 @@ exports.enrollCourse = async (req, res, next) => {
 
 // ─── @desc    Approve course (HOD/Admin)
 // ─── @route   PATCH /api/courses/:id/approve
-// ─── @access  Private (HOD / Admin)
+// ─── @access  Private (HOD/Admin)
 exports.approveCourse = async (req, res, next) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: true, approvedBy: req.user._id },
-      { new: true }
-    );
-    if (!course) return errorResponse(res, 404, 'Course not found.');
+    const { data: course } = await supabase
+      .from('courses')
+      .update({ is_approved: true })
+      .eq('id', req.params.id)
+      .select()
+      .single();
 
-    // Notify faculty
-    await Notification.create({
-      recipient: course.faculty,
-      type: 'course',
-      title: 'Course Approved',
-      message: `Your course "${course.title}" has been approved.`,
-      link: `/faculty/courses/${course._id}`,
-    });
+    if (course) course._id = course.id;
 
-    successResponse(res, 200, 'Course approved.', course);
+    successResponse(res, 200, 'Course approved successfully.', course);
   } catch (error) {
     next(error);
   }
 };
 
-// ─── @desc    Get enrolled students of a course
+// ─── @desc    Get enrolled students in a course
 // ─── @route   GET /api/courses/:id/students
-// ─── @access  Private (Faculty)
-exports.getCourseStudents = async (req, res, next) => {
+// ─── @access  Private (Faculty/HOD/Admin)
+exports.getEnrolledStudents = async (req, res, next) => {
   try {
-    const course = await Course.findById(req.params.id)
-      .populate('enrolledStudents', 'name email avatar rollNumber semester');
-    if (!course) return errorResponse(res, 404, 'Course not found.');
-    successResponse(res, 200, 'Students fetched.', course.enrolledStudents);
+    const { data: enrollments } = await supabase
+      .from('course_enrollments')
+      .select('*, student:users(id, name, email, roll_number, avatar)')
+      .eq('course_id', req.params.id);
+
+    const students = (enrollments || []).map((e) => ({
+      ...e.student,
+      _id: e.student.id,
+      enrolledAt: e.enrolled_at,
+    }));
+
+    successResponse(res, 200, 'Enrolled students fetched successfully.', students);
   } catch (error) {
     next(error);
   }
 };
+
+exports.getCourseStudents = exports.getEnrolledStudents;
+
