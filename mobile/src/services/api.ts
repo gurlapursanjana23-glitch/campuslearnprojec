@@ -70,11 +70,32 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Auto token refresh
+// Response Interceptor: Auto token refresh & Session Revocation Handler
+let onSessionRevokedCallback: (() => void) | null = null;
+
+export const setOnSessionRevoked = (callback: () => void) => {
+  onSessionRevokedCallback = callback;
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    // Handle 1-Web + 1-Mobile Session Revocation (login on another mobile device)
+    if (error.response?.data?.code === 'SESSION_REVOKED') {
+      try {
+        await AsyncStorage.removeItem('@campuslearn_token');
+        await AsyncStorage.removeItem('@campuslearn_user');
+        await AsyncStorage.removeItem('@campuslearn_refresh_token');
+      } catch (e) {}
+
+      if (onSessionRevokedCallback) {
+        onSessionRevokedCallback();
+      }
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
@@ -102,9 +123,21 @@ api.interceptors.response.use(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const authAPI = {
-  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
-  register: (data: Record<string, unknown>) => api.post('/auth/register', data),
+  login: (email: string, password: string) =>
+    api.post('/auth/login', {
+      email,
+      password,
+      platform: 'mobile',
+      deviceInfo: `${Platform.OS.toUpperCase()} Device (${Platform.Version})`,
+    }),
+  register: (data: Record<string, unknown>) =>
+    api.post('/auth/register', {
+      ...data,
+      platform: 'mobile',
+      deviceInfo: `${Platform.OS.toUpperCase()} Device (${Platform.Version})`,
+    }),
   getMe: () => api.get('/auth/me'),
+  getSessions: () => api.get('/auth/sessions'),
   logout: () => api.post('/auth/logout'),
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
 };

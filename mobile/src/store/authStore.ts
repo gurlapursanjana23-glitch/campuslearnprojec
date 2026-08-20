@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Role, ThemeMode } from '../types';
-import { authAPI, setServerUrl, initApiConfig, getServerUrl } from '../services/api';
+import { authAPI, setServerUrl, initApiConfig, getServerUrl, setOnSessionRevoked } from '../services/api';
 
 export const DEMO_USERS: Record<Role, User> = {
   student: {
@@ -89,6 +89,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isBackendConnected: true,
 
   initSession: async () => {
+    // Register automatic session revocation handler (1-Mobile limit enforcement)
+    setOnSessionRevoked(() => {
+      set({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+      });
+    });
+
     try {
       const activeUrl = await initApiConfig();
       set({ serverUrl: activeUrl });

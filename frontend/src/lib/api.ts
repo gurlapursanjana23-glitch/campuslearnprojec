@@ -28,49 +28,61 @@ api.interceptors.request.use(
  (error) => Promise.reject(error)
 );
 
-// ─── Response Interceptor (auto refresh) ─────────────────────────────────────
+// ─── Response Interceptor (auto refresh & session revocation check) ───────────
 api.interceptors.response.use(
- (response) => response,
- async (error) => {
- const originalRequest = error.config;
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
 
- if (error.response?.status === 401 && !originalRequest._retry) {
- originalRequest._retry = true;
+    // Handle Session Revocation (e.g., user logged in on another web browser)
+    if (error.response?.data?.code === 'SESSION_REVOKED') {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        alert('Session Expired: You have been logged out because a new login was detected on another web browser session.');
+        window.location.href = '/login?reason=session_revoked';
+      }
+      return Promise.reject(error);
+    }
 
- try {
- const refreshToken = localStorage.getItem('refreshToken');
- if (!refreshToken) throw new Error('No refresh token');
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
 
- const { data } = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
- const newToken = data.data.accessToken;
+      try {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) throw new Error('No refresh token');
 
- localStorage.setItem('accessToken', newToken);
- originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        const { data } = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
+        const newToken = data.data.accessToken;
 
- return api(originalRequest);
- } catch (_) {
- // Clear tokens and redirect to login
- localStorage.removeItem('accessToken');
- localStorage.removeItem('refreshToken');
- if (typeof window !== 'undefined') {
- window.location.href = '/login';
- }
- }
- }
+        localStorage.setItem('accessToken', newToken);
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
 
- return Promise.reject(error);
- }
+        return api(originalRequest);
+      } catch (_) {
+        // Clear tokens and redirect to login
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+      }
+    }
+
+    return Promise.reject(error);
+  }
 );
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
 export const authAPI = {
- register: (data: Record<string, unknown>) => api.post('/auth/register', data),
- login: (email: string, password: string) => api.post('/auth/login', { email, password }),
- logout: () => api.post('/auth/logout'),
- getMe: () => api.get('/auth/me'),
- forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
- resetPassword: (token: string, password: string) => api.put(`/auth/reset-password/${token}`, { password }),
- updatePassword: (data: Record<string, unknown>) => api.put('/auth/update-password', data),
+  register: (data: Record<string, unknown>) => api.post('/auth/register', { ...data, platform: 'web' }),
+  login: (email: string, password: string) => api.post('/auth/login', { email, password, platform: 'web' }),
+  logout: () => api.post('/auth/logout'),
+  getMe: () => api.get('/auth/me'),
+  getSessions: () => api.get('/auth/sessions'),
+  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token: string, password: string) => api.put(`/auth/reset-password/${token}`, { password }),
+  updatePassword: (data: Record<string, unknown>) => api.put('/auth/update-password', data),
 };
 
 // ─── Course API ───────────────────────────────────────────────────────────────

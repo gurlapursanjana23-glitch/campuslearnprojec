@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.16.0",
+    "@supabase/supabase-js": "^2.112.3",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",

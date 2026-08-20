@@ -1,5 +1,7 @@
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
+const sessionStore = require('../config/supabase');
 const { sendTokenResponse, generateAccessToken, verifyRefreshToken } = require('../utils/jwt');
 const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } = require('../utils/email');
 const { successResponse, errorResponse } = require('../utils/response');
@@ -9,7 +11,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 // ─── @access  Public
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role, department, rollNumber, employeeId, semester } = req.body;
+    const { name, email, password, role, department, rollNumber, employeeId, semester, platform, deviceInfo } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -23,6 +25,18 @@ exports.register = async (req, res, next) => {
       department, rollNumber, employeeId, semester,
     });
 
+    // Enforce 1 session per platform policy
+    const userPlatform = (platform || 'web').toLowerCase();
+    const sessionId = uuidv4();
+    const clientDeviceInfo = deviceInfo || req.headers['user-agent'] || 'Web Browser';
+
+    await sessionStore.createSession({
+      userId: user._id,
+      platform: userPlatform,
+      sessionId,
+      deviceInfo: clientDeviceInfo,
+    });
+
     // Send verification email
     const verificationToken = user.getEmailVerificationToken();
     await user.save({ validateBeforeSave: false });
@@ -32,10 +46,12 @@ exports.register = async (req, res, next) => {
       await sendVerificationEmail(user, verificationUrl);
     } catch (emailError) {
       console.error('Email send failed:', emailError.message);
-      // Don't fail registration if email fails
     }
 
-    sendTokenResponse(user, 201, res, 'Registration successful! Please verify your email.');
+    sendTokenResponse(user, 201, res, 'Registration successful! Please verify your email.', {
+      sessionId,
+      platform: userPlatform,
+    });
   } catch (error) {
     next(error);
   }
@@ -46,7 +62,7 @@ exports.register = async (req, res, next) => {
 // ─── @access  Public
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, platform, deviceInfo } = req.body;
 
     if (!email || !password) {
       return errorResponse(res, 400, 'Please provide email and password.');
@@ -66,7 +82,23 @@ exports.login = async (req, res, next) => {
     user.updateStreak();
     await user.save({ validateBeforeSave: false });
 
-    sendTokenResponse(user, 200, res, 'Login successful!');
+    // ─── 1-Web + 1-Mobile Session Enforcement ────────────────────────────────
+    const userPlatform = (platform || 'web').toLowerCase();
+    const sessionId = uuidv4();
+    const clientDeviceInfo = deviceInfo || req.headers['user-agent'] || (userPlatform === 'mobile' ? 'Mobile App' : 'Web Browser');
+
+    // Create session (this automatically revokes previous session for SAME platform)
+    await sessionStore.createSession({
+      userId: user._id,
+      platform: userPlatform,
+      sessionId,
+      deviceInfo: clientDeviceInfo,
+    });
+
+    sendTokenResponse(user, 200, res, 'Login successful!', {
+      sessionId,
+      platform: userPlatform,
+    });
   } catch (error) {
     next(error);
   }
@@ -209,11 +241,14 @@ exports.updatePassword = async (req, res, next) => {
   }
 };
 
-// ─── @desc    Logout (client should delete tokens)
+// ─── @desc    Logout (revokes active session in backend/Supabase)
 // ─── @route   POST /api/auth/logout
 // ─── @access  Private
 exports.logout = async (req, res, next) => {
   try {
+    if (req.sessionId) {
+      await sessionStore.revokeSession(req.sessionId);
+    }
     const user = await User.findById(req.user._id);
     if (user) {
       user.refreshToken = undefined;
@@ -224,3 +259,16 @@ exports.logout = async (req, res, next) => {
     next(error);
   }
 };
+
+// ─── @desc    Get user's active sessions (Web + Mobile)
+// ─── @route   GET /api/auth/sessions
+// ─── @access  Private
+exports.getUserSessions = async (req, res, next) => {
+  try {
+    const sessions = await sessionStore.getUserSessions(req.user._id);
+    successResponse(res, 200, 'Active sessions retrieved successfully.', sessions);
+  } catch (error) {
+    next(error);
+  }
+};
+

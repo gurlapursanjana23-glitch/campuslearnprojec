@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { darkTheme, lightTheme, borderRadius, spacing } from '../../theme/theme';
 import { Card } from './Card';
@@ -12,7 +12,7 @@ interface StatCardProps {
   iconBgColor?: string;
   trend?: string;
   trendPositive?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
