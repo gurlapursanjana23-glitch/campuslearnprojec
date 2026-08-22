@@ -122,4 +122,5 @@ campuslearn/
 - **Nayana G. Naik**: **Placement Preparation** — Aptitude practice, mock interview, resume analyzer, company opportunity tracking, and placement analytics dashboards.
 
 - **Sinchana**: Attendance shortage alert notification system.
+- **Zameer**: Real Time Timetable Management - A centralized timetable system that provides students, faculty, and HODs with live class schedules, instant updates, conflict detection, and calendar integration. It ensures accurate scheduling with real-time notifications for rescheduled or cancelled classes
 

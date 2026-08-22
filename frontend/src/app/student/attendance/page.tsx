@@ -39,11 +39,12 @@ const DEFAULT_PREFS: NotificationPrefs = {
   examAlerts: true,
 };
 
+// Mock attendance data for Arjun — reflects his real low attendance situation
 const MOCK_ATTENDANCE: AttendanceSummary[] = [
-  { course: 'c1', title: 'Database Management Systems', total: 28, present: 20, absent: 6, late: 2, percentage: 71 },
-  { course: 'c2', title: 'Operating Systems', total: 26, present: 22, absent: 3, late: 1, percentage: 85 },
-  { course: 'c3', title: 'Data Structures & Algorithms', total: 30, present: 27, absent: 2, late: 1, percentage: 90 },
-  { course: 'c4', title: 'Computer Networks', total: 24, present: 16, absent: 7, late: 1, percentage: 67 },
+  { course: 'c1', title: 'Database Management Systems', total: 20, present: 12, absent: 8, late: 0, percentage: 60 },
+  { course: 'c2', title: 'Operating Systems', total: 18, present: 11, absent: 7, late: 0, percentage: 61 },
+  { course: 'c3', title: 'Data Structures & Algorithms', total: 22, present: 14, absent: 8, late: 0, percentage: 64 },
+  { course: 'c4', title: 'Computer Networks', total: 16, present: 9, absent: 7, late: 0, percentage: 56 },
 ];
 
 function prefsKey(userId: string) {
@@ -59,9 +60,13 @@ function loadPrefs(userId: string): NotificationPrefs {
   }
 }
 
+// Calculate how many more classes Arjun needs to attend to reach 75%
+// Formula: ceil((0.75 * total - present) / (1 - 0.75)) = ceil((0.75*total - present) / 0.25)
 function classesNeededFor75(total: number, present: number): number {
   if (total === 0) return 0;
-  const needed = Math.ceil(0.75 * total - present);
+  // We need: (present + x) / (total + x) >= 0.75
+  // Solving: x >= (0.75*total - present) / 0.25
+  const needed = Math.ceil((0.75 * total - present) / 0.25);
   return Math.max(0, needed);
 }
 
